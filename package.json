@@ -1,0 +1,25 @@
+{
+  "name": "np-percent",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "develop": "webpack-dev-server --mode development",
+    "build": "webpack --mode production"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "html-webpack-plugin": "^5.5.0",
+    "ts-loader": "^9.4.2",
+    "webpack": "^5.77.0",
+    "webpack-cli": "^5.0.1",
+    "webpack-dev-server": "^4.13.2"
+  },
+  "dependencies": {
+    "@pixi/filter-drop-shadow": "^5.2.0",
+    "pixi.js": "^7.2.4"
+  }
+}
