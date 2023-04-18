@@ -80,7 +80,7 @@ class HamiltonianBoard {
       return i >= 0 && j >= 0 && i < w && j < h && !taken.has(`${i}:${j}`);
     }
 
-    for (let i = 0; i < w * h / 3; i++) {
+    for (let i = 0; i < w * h * 3 / 4; i++) {
       const candidates: [
         List<[number, number]>,
         [number, number][],
@@ -141,15 +141,13 @@ class HamiltonianBoard {
       insertList.next = head;
     }
 
-    console.log(this.goldPath);
-
     for (let cursor = this.goldPath; !!cursor; cursor = cursor.prev) {
       const [ni, nj] = cursor.head;
       Object.values(Direction).map((d) => add(ni, nj, d))
         .forEach(([ci, cj]) => {
           if (
             this.goldPath.some(([oi, oj]) => oi == ci && oj === cj) &&
-            Math.random() < 0.4) {
+            Math.random() < 0.3) {
             this.addEdge(cursor.head, [ci, cj]);
           }
         });
@@ -176,6 +174,7 @@ class ActiveBoard {
   spriteArray: Sprite[][];
   pos: [number, number];
   player: Sprite;
+  door: Sprite;
   active: boolean;
   chosenPath: [number, number][];
   currentOrigin: [number, number] | null = null;
@@ -200,14 +199,16 @@ class ActiveBoard {
     this.scale = scale;
     this.blurFilter = blurFilter;
     this.lightingLayer = lightingLayer;
+    this.waterCounter = 0;
+    this.animateCounter = 0;
 
     this.roomArray = [];
     const { width, height } = hamiltonianBoard;
     this.width = width;
     this.height = height;
-    for (let i = 0; i < width * 2 + 5; i++) {
+    for (let i = 0; i < width * 2 + 3; i++) {
       this.roomArray[i] = [];
-      for (let j = 0; j < height * 2 + 5; j++) {
+      for (let j = 0; j < height * 2 + 3; j++) {
         this.roomArray[i][j] = ' ';
       }
     }
@@ -230,14 +231,14 @@ class ActiveBoard {
       this.roomArray[i1 + i2 + 2][j1 + j2 + 2] = '#';
     });
 
-    for (let i = 0; i < width * 2 + 5; i++) {
+    for (let i = 0; i < width * 2 + 3; i++) {
       this.roomArray[0][i] = '#';
-      this.roomArray[height * 2 + 4][i] = '#';
+      this.roomArray[height * 2 + 2][i] = '#';
     }
 
-    for (let i = 0; i < height * 2 + 5; i++) {
+    for (let i = 0; i < height * 2 + 3; i++) {
       this.roomArray[i][0] = '#';
-      this.roomArray[i][width * 2 + 4] = '#';
+      this.roomArray[i][width * 2 + 2] = '#';
     }
 
     this.roomArray[2][1] = '#';
@@ -246,9 +247,9 @@ class ActiveBoard {
 
     this.spriteArray = [];
 
-    for (let i = 0; i < width * 2 + 5; i++) {
+    for (let i = 0; i < width * 2 + 3; i++) {
       this.spriteArray[i] = [];
-      for (let j = 0; j < height * 2 + 5; j++) {
+      for (let j = 0; j < height * 2 + 3; j++) {
         const tile = new Sprite(
           j > 0 && this.roomArray[i][j - 1] !== ' ' ?
             (
@@ -287,6 +288,14 @@ class ActiveBoard {
     firstBulb.filters = [this.blurFilter];
     this.spriteArray[2][2].addChild(firstBulb);
 
+    this.door = new Sprite(this.textures.door);
+    this.room.addChild(this.door);
+    this.door.position.x = (this.width + 1) * this.scale;
+    this.door.position.y = -this.scale;
+
+    this.door.scale.x = this.scale / 200;
+    this.door.scale.y = this.scale / 200;
+
     this.player = new Sprite(
       textures.face
     );
@@ -296,7 +305,7 @@ class ActiveBoard {
     this.player.scale.x = scale / 200;
     this.player.scale.y = scale / 200;
 
-    this.pos = [width + 2, height * 2 + 4];
+    this.pos = [width + 1, height * 2 + 2];
 
     this.room.addChild(this.player);
 
@@ -324,7 +333,7 @@ class ActiveBoard {
     let moved = false;
 
     if (keysdown['ArrowRight']) {
-      if (i < this.width * 2 + 5 - 1 && ['#', '?', '!'].includes(this.roomArray[i + 1][j])) {
+      if (i < this.width * 2 + 3 - 1 && ['#', '?', '!'].includes(this.roomArray[i + 1][j])) {
         this.pos[0] += 1;
         moved = true;
       }
@@ -349,7 +358,7 @@ class ActiveBoard {
       this.player.texture = this.textures.back;
     }
     else if (keysdown['ArrowDown']) {
-      if (j < this.height * 2 + 5 - 1 && ['#', '?', '!'].includes(this.roomArray[i][j + 1])) {
+      if (j < this.height * 2 + 3 - 1 && ['#', '?', '!'].includes(this.roomArray[i][j + 1])) {
         this.pos[1] += 1;
         moved = true;
       }
@@ -357,8 +366,8 @@ class ActiveBoard {
     }
     if (moved && this.roomArray[this.pos[0]][this.pos[1]] === '!' && !this.finished) {
       this.active = false;
-      for (let oi = 0; oi < this.width * 2 + 5; oi++) {
-        for (let oj = 0; oj < this.height * 2 + 5; oj++) {
+      for (let oi = 0; oi < this.width * 2 + 3; oi++) {
+        for (let oj = 0; oj < this.height * 2 + 3; oj++) {
           if (this.roomArray[oi][oj] === '!' && !(oi === 2 && oj === 2)) {
             this.roomArray[oi][oj] = '?';
             this.spriteArray[oi][oj].texture = this.textures.lightMid;
@@ -375,13 +384,6 @@ class ActiveBoard {
 
       if (this.roomArray.every((col) => col.every((cell) => cell !== '?'))) {
         this.finished = true;
-        const door = new Sprite(this.textures.door);
-        this.room.addChild(door);
-        door.position.x = (this.width + 2) * this.scale;
-        door.position.y = -this.scale;
-
-        door.scale.x = this.scale / 200;
-        door.scale.y = this.scale / 200;
 
         const doorbulb = new Graphics();
         doorbulb.beginFill(0xffffff, 0.7);
@@ -390,7 +392,7 @@ class ActiveBoard {
         (doorbulb as any).parentLayer = this.lightingLayer;
         doorbulb.filters = [this.blurFilter];
 
-        door.addChild(doorbulb);
+        this.door.addChild(doorbulb);
       }
 
       this.spriteArray[i][j].texture = this.textures.litMid;
@@ -420,7 +422,7 @@ class ActiveBoard {
     sprite.drawCircle(0, 0, 2);
     sprite.endFill();
     sprite.position.x = i * this.scale + this.scale / 2;
-    sprite.position.y = j * this.scale + 5;
+    sprite.position.y = j * this.scale + 3;
     this.room.addChild(sprite);
     this.particles.push({
       sprite,
@@ -446,13 +448,9 @@ class ActiveBoard {
       }
     }
 
-    else {
-      this.handleKeys(keysdown);
-    }
-
     if (this.waterCounter > 1) {
-      for (let i = 0; i < this.width * 2 + 5; i++) {
-        for (let j = 0; j < this.height * 2 + 5; j++) {
+      for (let i = 0; i < this.width * 2 + 3; i++) {
+        for (let j = 0; j < this.height * 2 + 3; j++) {
           if (this.roomArray[i][j] === ' ' && !(j > 0 && this.roomArray[i][j - 1] !== ' ')) {
             this.spriteArray[i][j].texture = [this.textures.water1, this.textures.water2, this.textures.water3, this.textures.water4][Math.floor(Math.random() * 4)];
           }
@@ -462,6 +460,7 @@ class ActiveBoard {
     }
     this.waterCounter += delta * 0.025;
 
+    /*
     if (this.animateCounter > 1 && this.currentDest) {
       if (this.player.texture === this.textures.right1) {
         this.player.texture = this.textures.right2;
@@ -478,9 +477,10 @@ class ActiveBoard {
       this.animateCounter = 0;
     }
     this.animateCounter += delta * 0.05;
+    */
 
-    for (let i = 0; i < this.width * 2 + 5; i++) {
-      for (let j = 0; j < this.height * 2 + 5; j++) {
+    for (let i = 0; i < this.width * 2 + 3; i++) {
+      for (let j = 0; j < this.height * 2 + 3; j++) {
         if (this.roomArray[i][j] === '!' && Math.random() > Math.pow(0.5, delta * 0.025)) {
           this.addParticle(i, j);
         }
@@ -571,7 +571,7 @@ async function main() {
 
   document.body.addEventListener('keydown', (event) => {
     keysdown[event.key] = true;
-    if (activeBoard.finished && activeBoard.pos[0] === activeBoard.width + 2 && activeBoard.pos[1] === 0 && event.key === 'ArrowUp') {
+    if (activeBoard.finished && activeBoard.pos[0] === activeBoard.width + 1 && activeBoard.pos[1] === 0 && event.key === 'ArrowUp') {
       roomSize += 1;
       const newBoard = new HamiltonianBoard(
         roomSize,
