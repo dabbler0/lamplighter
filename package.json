@@ -21,6 +21,7 @@
   "dependencies": {
     "@pixi/filter-drop-shadow": "^5.2.0",
     "@pixi/layers": "^2.0.1",
+    "fantasy-name-generator": "^2.0.0",
     "pixi.js": "^7.2.4"
   }
 }

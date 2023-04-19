@@ -1,175 +1,9 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
+import HamiltonianBoard, { Direction, List } from './HamiltonianBoard';
 
-enum Direction {
-  up = 'up',
-  down = 'down',
-  right = 'right',
-  left = 'left'
-};
-
-function add(i: number, j: number, d: Direction): [number, number] {
-  return d === Direction.up ? [i, j - 1] :
-    d === Direction.down ? [i, j + 1] :
-    d === Direction.right ? [i + 1, j] :
-    [i - 1, j];
-}
-
-class List<T> {
-  next?: List<T>;
-  constructor (
-    public head: T,
-    public prev?: List<T>) {
-
-    if (this.prev) prev.next = this;
-
-    this.next = null;
-  }
-
-  some (fn: (t: T) => boolean): boolean {
-    return fn(this.head) || (!!this.prev && this.prev.some(fn));
-  }
-  forEach (fn: (t: T) => void): void {
-    fn(this.head);
-    if (this.prev) this.prev.forEach(fn);
-  }
-}
-
-class HamiltonianBoard {
-  goldPath: List<[number, number]>;
-  edges: Set<string>;
-  width: number;
-  height: number;
-
-  constructor (w: number, h: number) {
-    this.edges = new Set<string>();
-    this.width = w;
-    this.height = h;
-
-    // "random nudging" to create the path
-    this.goldPath = new List(
-      [0, 1],
-      new List(
-        [1, 1],
-        new List(
-          [1, 0],
-          new List(
-            [0, 0]
-          )
-        )
-      )
-    );
-
-    const taken = new Set<string>();
-    this.goldPath.forEach(([i, j]) => taken.add(`${i}:${j}`));
-
-    function allBetween([i1, j1]: [number, number], [i2, j2]: [number, number]): [number, number][] {
-      if (i1 === i2) {
-        if (j2 < j1) return [...Array(j1 - j2 + 1)].map((_, delta) => [i1, j1 - delta]);
-        return [...Array(j2 - j1 + 1)].map((_, delta) => [i1, j1 + delta]);
-      }
-      else if (j1 === j2) {
-        if (i2 < i1) return [...Array(i1 - i2 + 1)].map((_, delta) => [i1 - delta, j1]);
-        return [...Array(i2 - i1 + 1)].map((_, delta) => [i1 + delta, j1]);
-      }
-      return [];
-    }
-
-    function valid([i, j]: [number, number]): boolean {
-      return i >= 0 && j >= 0 && i < w && j < h && !taken.has(`${i}:${j}`);
-    }
-
-    for (let i = 0; i < w * h * 3 / 4; i++) {
-      const candidates: [
-        List<[number, number]>,
-        [number, number][],
-        List<[number, number]>
-      ][] = [];
-      for (let cursor = this.goldPath; !!cursor.prev; cursor = cursor.prev) {
-        // This edge:
-        const [i1, j1] = cursor.head;
-        // Direction:
-        const iDirection = cursor.head[0] === cursor.prev.head[0];
-
-        for (let tail = cursor.prev; !!tail; tail = tail.prev) {
-          const [i2, j2] = tail.head;
-
-          if (iDirection && i2 !== i1) break;
-          if (!iDirection && j2 !== j1) break;
-
-          const tries = i1 === i2 ? [
-            allBetween([i2 + 1, j2], [i1 + 1, j1]),
-            allBetween([i2 - 1, j2], [i1 - 1, j1]),
-          ] : [
-            allBetween([i2, j2 + 1], [i1, j1 + 1]),
-            allBetween([i2, j2 - 1], [i1, j1 - 1])
-          ];
-
-          for (const t of tries) {
-            if (t.every(valid)) {
-              candidates.push(
-                [
-                  tail, t, cursor,
-                ]
-              );
-            }
-          }
-        }
-      }
-
-      if (candidates.length === 0) break;
-
-      const [tail, t, head] = candidates[
-        Math.floor(Math.random() * candidates.length)
-      ];
-
-      // Intermediates no longer taken
-      for (let cursor = head.prev; cursor !== tail; cursor = cursor.prev) {
-        const [i, j] = cursor.head;
-        taken.delete(`${i}:${j}`);
-      }
-
-      // Insert intermediates
-      let insertList = tail;
-      for (let [i, j] of t) {
-        insertList = new List([i, j], insertList);
-        taken.add(`${i}:${j}`);
-      }
-
-      head.prev = insertList;
-      insertList.next = head;
-    }
-
-    for (let cursor = this.goldPath; !!cursor; cursor = cursor.prev) {
-      const [ni, nj] = cursor.head;
-      Object.values(Direction).map((d) => add(ni, nj, d))
-        .forEach(([ci, cj]) => {
-          if (
-            this.goldPath.some(([oi, oj]) => oi == ci && oj === cj) &&
-            Math.random() < 0.3) {
-            this.addEdge(cursor.head, [ci, cj]);
-          }
-        });
-
-      if (cursor.prev) {
-        this.addEdge(cursor.head, cursor.prev.head);
-      }
-    }
-    this.addEdge([0, 0], [0, 1]);
-  }
-
-  addEdge([i1, j1]: [number, number], [i2, j2]: [number, number]) {
-    const [left, right] = [
-      `${i1}:${j1}`,
-      `${i2}:${j2}`
-    ].sort();
-
-    this.edges.add(`${left}::${right}`);
-  }
-}
-
-class ActiveBoard {
+class ActiveHamiltonianBoard {
   roomArray: string[][];
   spriteArray: Sprite[][];
   pos: [number, number];
@@ -213,11 +47,19 @@ class ActiveBoard {
       }
     }
 
+    for (let i = 0; i < width; i++) {
+      for (let j = 0; j < height; j++) {
+        this.roomArray[i * 2 + 2][j * 2 + 2] = '#';
+      }
+    }
+
     for (let cursor = hamiltonianBoard.goldPath; !!cursor; cursor = cursor.prev) {
       const platform = new Sprite(textures.platform);
       const [i, j] = cursor.head;
 
-      this.roomArray[i * 2 + 2][j * 2 + 2] = '?';
+      if (hamiltonianBoard.degree(...cursor.head) >= 3) {
+        this.roomArray[i * 2 + 2][j * 2 + 2] = '?';
+      }
     }
 
     this.roomArray[2][2] = '!';
@@ -460,25 +302,6 @@ class ActiveBoard {
     }
     this.waterCounter += delta * 0.025;
 
-    /*
-    if (this.animateCounter > 1 && this.currentDest) {
-      if (this.player.texture === this.textures.right1) {
-        this.player.texture = this.textures.right2;
-      }
-      else if (this.player.texture === this.textures.right2) {
-        this.player.texture = this.textures.right1;
-      }
-      else if (this.player.texture === this.textures.left1) {
-        this.player.texture = this.textures.left2;
-      }
-      else if (this.player.texture === this.textures.left2) {
-        this.player.texture = this.textures.left1;
-      }
-      this.animateCounter = 0;
-    }
-    this.animateCounter += delta * 0.05;
-    */
-
     for (let i = 0; i < this.width * 2 + 3; i++) {
       for (let j = 0; j < this.height * 2 + 3; j++) {
         if (this.roomArray[i][j] === '!' && Math.random() > Math.pow(0.5, delta * 0.025)) {
@@ -501,7 +324,6 @@ class ActiveBoard {
       return true;
     });
   }
-
 }
 
 async function main() {
@@ -560,7 +382,7 @@ async function main() {
 
   const keysdown: Record<string, boolean> = {};
 
-  let activeBoard = new ActiveBoard(
+  let activeBoard = new ActiveHamiltonianBoard(
     hamiltonianBoard,
     textures,
     40,
@@ -579,7 +401,7 @@ async function main() {
       );
       app.stage.removeChild(activeBoard.room);
       app.stage.removeChild(lightingSprite);
-      activeBoard = new ActiveBoard(
+      activeBoard = new ActiveHamiltonianBoard(
         newBoard,
         textures,
         40,
