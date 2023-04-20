@@ -513,7 +513,7 @@ class ActiveBoard {
     }
     else if (keysdown['w']) {
       const interacted = this.mobs.find(({ mob }) => mob.pos[0] === this.playerTarget[0] && mob.pos[1] === this.playerTarget[1]);
-      if (interacted && !interacted.mob.revealColor) {
+      if (interacted && !interacted.mob.revealColor && !this.finished) {
         const { mob, sprite } = interacted;
         mob.guessedColor = nextColor(mob.guessedColor);
         sprite.texture = this.textures[knightTextureNames[mob.guessedColor]];
