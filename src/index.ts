@@ -727,7 +727,7 @@ async function main() {
 
   function generateKnightGraph (roomSize: number) {
     const newBoard = new KnightGraph(
-      Math.floor(roomSize / 2) - 1
+      Math.floor(roomSize / 4)
     );
     return ActiveBoard.fromKnightGraph(
       newBoard,
