@@ -1,40 +1,8 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
-
-export enum Direction {
-  up = 'up',
-  down = 'down',
-  right = 'right',
-  left = 'left'
-};
-
-function add(i: number, j: number, d: Direction): [number, number] {
-  return d === Direction.up ? [i, j - 1] :
-    d === Direction.down ? [i, j + 1] :
-    d === Direction.right ? [i + 1, j] :
-    [i - 1, j];
-}
-
-export class List<T> {
-  next?: List<T>;
-  constructor (
-    public head: T,
-    public prev?: List<T>) {
-
-    if (this.prev) prev.next = this;
-
-    this.next = null;
-  }
-
-  some (fn: (t: T) => boolean): boolean {
-    return fn(this.head) || (!!this.prev && this.prev.some(fn));
-  }
-  forEach (fn: (t: T) => void): void {
-    fn(this.head);
-    if (this.prev) this.prev.forEach(fn);
-  }
-}
+import List from './List';
+import Direction, { add } from './Direction
 
 export default class HamiltonianBoard {
   goldPath: List<[number, number]>;
