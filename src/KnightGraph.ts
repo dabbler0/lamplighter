@@ -2,13 +2,38 @@ import { nameByRace, RaceType } from 'fantasy-name-generator';
 
 const seasons = ['spring', 'fall', 'winter', 'summer'];
 
-enum KnightColor {
+export enum KnightColor {
   red = 'red',
   green = 'green',
   blue = 'blue',
 }
 
-class Knight {
+const namesets: RaceType[] = [
+  "cavePerson",
+  "dwarf",
+  "halfling",
+  "gnome",
+  "elf",
+  "highelf",
+  "fairy",
+  "highfairy",
+  "darkelf",
+  "drow",
+  "halfdemon",
+  "dragon",
+  "angel",
+  "demon",
+  "goblin",
+  "orc",
+  "ogre",
+  "human"
+];
+
+function randomNameset() {
+  return namesets[Math.floor(Math.random() * namesets.length)];
+}
+
+export class Knight {
   guessedColor: KnightColor;
   name: string;
   enemies: Set<string>;
@@ -28,10 +53,12 @@ class Knight {
   }
 }
 
-class KnightGraph {
+export default class KnightGraph {
   knights: Record<string, Knight>;
+  nameset: RaceType;
 
-  constructor (public nameset: RaceType) {
+  constructor (iterations: number) {
+    this.nameset = randomNameset();
     this.knights = {};
 
     const redKing = new Knight(KnightColor.red, this.nameset);
@@ -44,7 +71,7 @@ class KnightGraph {
     redKing.enemy(greenKing);
     blueKing.enemy(greenKing);
 
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < iterations; i++) {
       this.iterate();
     }
   }
@@ -123,53 +150,26 @@ class KnightGraph {
       if (Math.random() < 0.5) {
         const isLast = events.every(([x, y], j) => j <= i || x !== b && y !== b);
         declarations[a].push(
-          `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I ${isLast ? 'felled' : 'bested'} ${b}`
+          `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I ${isLast ? 'felled' : 'bested'} ${b}.`
         );
         if (isLast) {
           declarations[b].push(
-            `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I was felled by ${a}`
+            `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I was felled by ${a}.`
           );
         }
       } else {
         const isLast = events.every(([x, y], j) => j <= i || x !== a && y !== a);
         declarations[b].push(
-          `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I ${isLast ? 'felled' : 'bested'} ${a}`
+          `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I ${isLast ? 'felled' : 'bested'} ${a}.`
         );
         if (isLast) {
           declarations[a].push(
-            `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I was felled by ${b}`
+            `In the ${seasons[dates[i] % 4]} of ${Math.floor(dates[i] / 4)}, I was felled by ${b}.`
           );
         }
       }
     });
 
-    return Object.keys(declarations).sort().map((x) => {
-      return `I am ${x}.
-${declarations[x].join('\n')}`;
-    }).join('\n');
+    return declarations;
   }
 }
-
-const namesets: RaceType[] = [
-  "cavePerson",
-  "dwarf",
-  "halfling",
-  "gnome",
-  "elf",
-  "highelf",
-  "fairy",
-  "highfairy",
-  "darkelf",
-  "drow",
-  "halfdemon",
-  "dragon",
-  "angel",
-  "demon",
-  "goblin",
-  "orc",
-  "ogre",
-  "human"
-];
-
-const graph = new KnightGraph(namesets[Math.floor(Math.random() * namesets.length)]);
-console.log(graph.render());
