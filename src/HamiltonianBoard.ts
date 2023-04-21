@@ -2,7 +2,7 @@ import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES,
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
 import List from './List';
-import Direction, { add } from './Direction
+import Direction, { add } from './Direction';
 
 export default class HamiltonianBoard {
   goldPath: List<[number, number]>;

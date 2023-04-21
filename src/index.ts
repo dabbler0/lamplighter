@@ -1,7 +1,10 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
-import HamiltonianBoard, { Direction, List } from './HamiltonianBoard';
+import Direction from './Direction';
+import List from './List';
+import HamiltonianBoard from './HamiltonianBoard';
+import GoishiHiroiBoard from './GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from './KnightGraph';
 
 function nextColor(c: KnightColor) {
@@ -19,6 +22,9 @@ enum Terrain {
   litTorch = 'litTorch',
   unlitTorch = 'unlitTorch',
   path = 'path',
+  ice = 'ice',
+  unusedIceRune = 'unusedIceRune',
+  usedIceRune = 'usedIceRune',
 }
 
 type LevelOptions = {
@@ -68,6 +74,15 @@ function isPassable(t: Terrain) {
 }
 
 function terrainToTexture(here: Terrain, above: Terrain, textures: Record<string, Texture>) {
+  if (here === Terrain.ice) {
+    return textures.ice;
+  }
+  if (here === Terrain.unusedIceRune) {
+    return textures.unusedIceRune;
+  }
+  if (here === Terrain.usedIceRune) {
+    return textures.usedIceRune;
+  }
   if (above === Terrain.water) {
     if (here === Terrain.unlitTorch) {
       return textures.lightTop;
@@ -180,7 +195,7 @@ class ActiveBoard {
           )
         );
 
-        if (this.terrain[i][j] === Terrain.litTorch) {
+        if (this.terrain[i][j] === Terrain.litTorch || this.terrain[i][j] === Terrain.unusedIceRune) {
           this.addBulb(tile);
         }
 
@@ -369,6 +384,42 @@ class ActiveBoard {
     });
   }
 
+  static fromGoishiHiroi(board: GoishiHiroiBoard, rest: {
+    textures: Record<string, Texture>;
+    scale: number;
+    app: Application;
+    blurFilter: Filter;
+    lightingLayer: Layer;
+  }) {
+    const terrain: Terrain[][] = [];
+    const { width, height } = board;
+
+    for (let i = 0; i < width + 2; i++) {
+      terrain[i] = [];
+      for (let j = 0; j < height + 2; j++) {
+        terrain[i][j] = Terrain.path;
+      }
+    }
+
+    for (let i = 0; i < width; i++) {
+      for (let j = 0; j < height; j++) {
+        terrain[i + 1][j + 1] = Terrain.ice;
+      }
+    }
+
+    for (let cursor = board.goldPath; !!cursor; cursor = cursor.prev) {
+      const [i, j] = cursor.head;
+      terrain[i + 1][j + 1] = Terrain.unusedIceRune;
+    }
+
+    return new this({
+      terrain,
+      mobs: [],
+      opts: {},
+      ...rest
+    });
+  }
+
   static fromHamiltonian(hamiltonianBoard: HamiltonianBoard, rest: {
     textures: Record<string, Texture>;
     scale: number;
@@ -474,6 +525,9 @@ class ActiveBoard {
     if (keysdown['ArrowRight']) {
       if (i < this.width - 1 && this.isPassable(i + 1, j)) {
         this.pos[0] += 1;
+        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
+          this.pos[0] += 1;
+        }
         moved = true;
       }
       this.playerTarget = [this.pos[0] + 1, this.pos[1]];
@@ -485,6 +539,9 @@ class ActiveBoard {
     else if (keysdown['ArrowLeft']) {
       if (i > 0 && this.isPassable(i - 1, j)) {
         this.pos[0] -= 1;
+        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
+          this.pos[0] -= 1;
+        }
         moved = true;
       }
       this.playerTarget = [this.pos[0] - 1, this.pos[1]];
@@ -496,6 +553,9 @@ class ActiveBoard {
     else if (keysdown['ArrowUp']) {
       if (j > 0 && this.isPassable(i, j - 1)) {
         this.pos[1] -= 1;
+        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
+          this.pos[1] -= 1;
+        }
         moved = true;
       }
       this.playerTarget = [this.pos[0], this.pos[1] - 1];
@@ -505,6 +565,9 @@ class ActiveBoard {
     else if (keysdown['ArrowDown']) {
       if (j < this.height - 1 && this.isPassable(i, j + 1)) {
         this.pos[1] += 1;
+        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
+          this.pos[1] += 1;
+        }
         moved = true;
       }
       this.playerTarget = [this.pos[0], this.pos[1] + 1];
@@ -551,6 +614,29 @@ class ActiveBoard {
             this.terrain[oi][oj] = Terrain.unlitTorch;
             this.tiles[oi][oj].texture = this.textures.lightMid;
             this.tiles[oi][oj].removeChild(this.tiles[oi][oj].children[0]);
+          }
+        }
+      }
+    }
+
+    const [ni, nj] = this.pos;
+
+    // Goishi Hiroi puzzle
+    if (this.terrain[ni][nj] === Terrain.unusedIceRune) {
+      this.terrain[ni][nj] = Terrain.usedIceRune;
+      this.tiles[ni][nj].texture = this.textures.usedIceRune;
+      this.tiles[ni][nj].removeChild(this.tiles[ni][nj].children[0]);
+
+      if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unusedIceRune))) {
+        this.declareFinished();
+      }
+    } else if (this.terrain[ni][nj] === Terrain.path && !this.finished) {
+      for (let oi = 0; oi < this.width; oi++) {
+        for (let oj = 0; oj < this.height; oj++) {
+          if (this.terrain[oi][oj] === Terrain.usedIceRune) {
+            this.terrain[oi][oj] = Terrain.unusedIceRune;
+            this.tiles[oi][oj].texture = this.textures.unusedIceRune;
+            this.addBulb(this.tiles[oi][oj]);
           }
         }
       }
@@ -621,7 +707,7 @@ class ActiveBoard {
 
     for (let i = 0; i < this.width; i++) {
       for (let j = 0; j < this.height; j++) {
-        if (this.terrain[i][j] === Terrain.litTorch && Math.random() > Math.pow(0.5, delta * 0.025)) {
+        if ((this.terrain[i][j] === Terrain.litTorch || this.terrain[i][j] === Terrain.unusedIceRune) && Math.random() > Math.pow(0.5, delta * 0.025)) {
           this.addParticle(i, j);
         }
       }
@@ -673,6 +759,9 @@ async function main() {
     redKnight: await Assets.load('./assets/red-knight.png'),
     blueKnight: await Assets.load('./assets/blue-knight.png'),
     greenKnight: await Assets.load('./assets/green-knight.png'),
+    ice: await Assets.load('./assets/ice.png'),
+    unusedIceRune: await Assets.load('./assets/ice-rune-unused.png'),
+    usedIceRune: await Assets.load('./assets/ice-rune-used.png'),
   };
 
   textures.left1.rotate = groupD8.MIRROR_HORIZONTAL;
@@ -740,8 +829,34 @@ async function main() {
       }
     );
   }
+  function generateGoishiHiroi (roomSize: number) {
+    const newBoard = new GoishiHiroiBoard(
+      roomSize, roomSize, roomSize * 2
+    );
+    return ActiveBoard.fromGoishiHiroi(
+      newBoard,
+      {
+        textures,
+        scale: 40,
+        app,
+        blurFilter: blur,
+        lightingLayer: lighting,
+      }
+    );
+  }
 
-  let activeBoard = Math.random() < 0.5 ? generateKnightGraph(roomSize) : generateHamiltonian(roomSize);
+  function generateRandomBoard () {
+    const selection = Math.floor(Math.random() * 2);
+    if (selection === 0) {
+      return generateHamiltonian(roomSize);
+    } else if (selection === 1) {
+      return generateGoishiHiroi(roomSize);
+    } else {
+      return generateKnightGraph(roomSize);
+    }
+  }
+
+  let activeBoard = generateRandomBoard();
 
   document.body.addEventListener('keydown', (event) => {
     keysdown[event.key] = true;
@@ -754,11 +869,12 @@ async function main() {
       app.stage.removeChild(activeBoard.room);
       app.stage.removeChild(activeBoard.textWrapper);
       app.stage.removeChild(lightingSprite);
-      activeBoard = Math.random() < 0.5 ? generateKnightGraph(roomSize) : generateHamiltonian(roomSize);
+      activeBoard = generateRandomBoard();
       app.stage.addChild(lightingSprite);
       app.stage.addChild(activeBoard.textWrapper);
+    } else {
+      activeBoard.handleKeys(keysdown);
     }
-    activeBoard.handleKeys(keysdown);
   });
   document.body.addEventListener('keyup', (event) => {
     keysdown[event.key] = false;
@@ -784,4 +900,3 @@ async function main() {
 }
 
 main();
-

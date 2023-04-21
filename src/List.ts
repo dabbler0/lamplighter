@@ -1,4 +1,4 @@
-export class List<T> {
+export default class List<T> {
   next?: List<T>;
   constructor (
     public head: T,
