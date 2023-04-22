@@ -1,4 +1,4 @@
-import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, groupD8 } from 'pixi.js';
+import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, RenderTexture, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
 import Direction from './Direction';
@@ -6,6 +6,7 @@ import List from './List';
 import HamiltonianBoard from './HamiltonianBoard';
 import GoishiHiroiBoard from './GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from './KnightGraph';
+import AltarBoard from './AltarBoard';
 
 function nextColor(c: KnightColor) {
   if (c === KnightColor.red) {
@@ -17,6 +18,43 @@ function nextColor(c: KnightColor) {
   }
 }
 
+// Memoized orb texture generator
+const orbTextures: Record<number, Texture> = {};
+function getOrbTexture(n: number, textures: Record<string, Texture>, app: Application) {
+  if (n in orbTextures) return orbTextures[n];
+
+  const container = new Container();
+  for (let i = 0; i < Math.floor(n / 4); i++) {
+    const sprite = new Sprite(textures.orbs4);
+    sprite.position.y = i * -50;
+    container.addChild(sprite);
+  }
+
+  if (n % 4 >= 2) {
+    const twoSprite = new Sprite(textures.orbs2);
+    twoSprite.position.y = Math.max(0, Math.floor(n / 4) - 1) * -50
+    container.addChild(twoSprite);
+  }
+  if (n % 2 === 1) {
+    const oneSprite = new Sprite(textures.orbs1);
+    oneSprite.position.y = Math.max(0, Math.floor(n / 4) - 1) * -50
+    container.addChild(oneSprite);
+  }
+
+  const renderTexture = RenderTexture.create({
+    width: 200,
+    height: 200 + 50 * Math.max(0, Math.floor(n / 4) - 1),
+  });
+
+  container.position.y = 50 * Math.max(0, Math.floor(n / 4) - 1);
+
+  app.renderer.render(container, { renderTexture });
+
+  orbTextures[n] = renderTexture;
+
+  return renderTexture;
+}
+
 enum Terrain {
   water = 'water',
   litTorch = 'litTorch',
@@ -25,11 +63,33 @@ enum Terrain {
   ice = 'ice',
   unusedIceRune = 'unusedIceRune',
   usedIceRune = 'usedIceRune',
+  purple = 'purple',
 }
 
 type LevelOptions = {
-  torchPuzzle?: boolean;
+  hRoot?: [number, number]
+  altarTarget?: number;
 };
+
+class PileMob {
+  size: number;
+  pos: [number, number];
+
+  constructor({
+    size, pos
+  }: { size: number; pos: [number, number] }) {
+    this.size = size;
+    this.pos = pos;
+  }
+}
+
+class AltarMob {
+  pos: [number, number]
+
+  constructor({ pos }: { pos: [number, number] }) {
+    this.pos = pos;
+  }
+}
 
 class KnightMob {
   trueColor: KnightColor;
@@ -67,7 +127,7 @@ const knightTextureNames = {
   [KnightColor.green]: 'greenKnight',
 };
 
-type Mob = KnightMob;
+type Mob = KnightMob | AltarMob | PileMob;
 
 function isPassable(t: Terrain) {
   return t !== Terrain.water;
@@ -82,6 +142,9 @@ function terrainToTexture(here: Terrain, above: Terrain, textures: Record<string
   }
   if (here === Terrain.usedIceRune) {
     return textures.usedIceRune;
+  }
+  if (here === Terrain.purple) {
+    return textures.stonePurple;
   }
   if (above === Terrain.water) {
     if (here === Terrain.unlitTorch) {
@@ -122,6 +185,7 @@ class ActiveBoard {
   pos: [number, number];
   player: Sprite;
   playerTarget: [number, number];
+  pullingMob: { mob: Mob; sprite: Sprite };
 
   // Room container
   door: Sprite;
@@ -236,6 +300,47 @@ class ActiveBoard {
           mob, sprite
         });
       }
+
+      if (mob instanceof AltarMob) {
+        const sprite = new Sprite(
+          textures[
+            knightTextureNames.blue
+          ]
+        );
+
+        sprite.scale.x = this.scale / 200;
+        sprite.scale.y = this.scale / 200;
+
+        sprite.anchor.y = 0.3;
+
+        sprite.position.x = mob.pos[0] * scale;
+        sprite.position.y = mob.pos[1] * scale;
+
+        this.room.addChild(sprite);
+        this.mobs.push({
+          mob, sprite
+        });
+      }
+
+      if (mob instanceof PileMob) {
+        const sprite = new Sprite(
+          getOrbTexture(mob.size, this.textures, this.app)
+        );
+
+        sprite.scale.x = this.scale / 200;
+        sprite.scale.y = this.scale / 200;
+
+        const excessHeight = (50 * Math.max(0, Math.floor(mob.size / 4) - 1));
+        sprite.anchor.y = excessHeight / (200 + excessHeight);
+
+        sprite.position.x = mob.pos[0] * scale;
+        sprite.position.y = mob.pos[1] * scale;
+
+        this.room.addChild(sprite);
+        this.mobs.push({
+          mob, sprite
+        });
+      }
     });
 
 
@@ -309,7 +414,7 @@ class ActiveBoard {
     const width = Math.ceil(Math.sqrt(size));
     const height = Math.ceil(Math.sqrt(size));
 
-    const mobs: Mob[] = [];
+    const mobs: KnightMob[] = [];
 
     const terrain: Terrain[][] = [];
 
@@ -357,7 +462,6 @@ class ActiveBoard {
       }));
       taken.add(index);
       const skip = Math.floor(Math.random() * (width * height - taken.size));
-      console.log('adding skip', index, skip);
       for (let i = 0; i < skip + 1; i++) {
         index = (index + 1) % (width * height);
         while (taken.has(index)) {
@@ -381,6 +485,67 @@ class ActiveBoard {
       mobs,
       opts: {},
       ...rest
+    });
+  }
+
+  static fromAltar(board: AltarBoard, rest: {
+    textures: Record<string, Texture>;
+    scale: number;
+    app: Application;
+    blurFilter: Filter;
+    lightingLayer: Layer;
+  }) {
+    const terrain: Terrain[][] = [];
+    const mobs: Mob[] = [];
+
+    const color = Object.values(KnightColor)[Math.floor(Math.random() * 3)];
+
+    for (let i = 0; i < board.numBuckets * 4 + 5; i++) {
+      terrain[i] = [];
+      for (let j = 0; j < 12; j++) {
+        terrain[i][j] = Terrain.path;
+      }
+    }
+
+    for (let i = 0; i < board.numBuckets * 4 + 3; i++) {
+      terrain[i + 1][1] = Terrain.water;
+      terrain[i + 1][10] = Terrain.water;
+    }
+    terrain[Math.floor((board.numBuckets * 4 + 5) / 2)][10] = Terrain.path;
+    terrain[Math.floor((board.numBuckets * 4 + 5) / 2)][1] = Terrain.path;
+
+    for (let j = 0; j < 10; j++) {
+      terrain[1][j + 1] = Terrain.water;
+      terrain[board.numBuckets * 4 + 3][j + 1] = Terrain.water;
+    }
+
+    for (let i = 0; i < board.numBuckets; i++) {
+      mobs.push(new AltarMob({
+        pos: [4 + i * 4, 3]
+      }));
+      for (let j = 0; j < 3; j++) {
+        terrain[3 + i * 4 + j][4] = Terrain.purple;
+      }
+      terrain[3 + i * 4][3] = Terrain.unlitTorch;
+      terrain[5 + i * 4][3] = Terrain.unlitTorch;
+    }
+
+    const piles = board.beadPiles.slice(0).sort(() => Math.random() < 0.5 ? 1 : -1);
+
+    for (let i = 0; i < piles.length; i++) {
+      if (piles[i] !== 0) {
+        mobs.push(new PileMob({
+          size: piles[i],
+          pos: [4 + i, 8]
+        }));
+      }
+    }
+
+    return new this({
+      terrain,
+      mobs,
+      opts: { altarTarget: board.numBuckets * 3 },
+      ...rest,
     });
   }
 
@@ -452,7 +617,7 @@ class ActiveBoard {
       }
     }
 
-    terrain[2][2] = Terrain.litTorch;
+    terrain[width + 1][height * 2 + 1] = Terrain.litTorch;
 
     Array.from(hamiltonianBoard.edges).forEach((edge) => {
       const [
@@ -473,12 +638,12 @@ class ActiveBoard {
       terrain[i][width * 2 + 2] = Terrain.path;
     }
 
-    terrain[2][1] = Terrain.path;
+    terrain[width + 1][1] = Terrain.path;
 
     return new this({
       terrain,
       mobs: [],
-      opts: { torchPuzzle: true },
+      opts: { hRoot: [ width + 1, height * 2 + 1 ] },
       ...rest
     });
   }
@@ -511,109 +676,182 @@ class ActiveBoard {
     }
   }
 
+  tryPush (i: number, j: number, di: number, dj: number) {
+    if (!isPassable(this.terrain[i][j])) return false;
+    if (!this.isPassable(di, dj)) return false;
+    const foundMob = this.mobs.find(({ mob }) =>
+      mob instanceof PileMob && mob.pos[0] === i && mob.pos[1] === j
+    );
+
+    if (!foundMob) return false;
+
+    foundMob.mob.pos[0] = di;
+    foundMob.mob.pos[1] = dj;
+
+    foundMob.sprite.position.x = di * this.scale;
+    foundMob.sprite.position.y = dj * this.scale;
+
+    this.pos[0] = i;
+    this.pos[1] = j;
+    
+    return true;
+  }
+
+  checkAltarVictory () {
+    if (!this.opts.altarTarget) return;
+
+    const finished = this.mobs.map(({ mob, sprite }) => {
+      if (!(mob instanceof AltarMob)) return true;
+
+      const nearby = this.mobs.filter(({ mob: pile }) => (pile instanceof PileMob) &&
+        (Math.max(Math.abs(pile.pos[0] - mob.pos[0]), Math.abs(pile.pos[1] - mob.pos[1])) <= 1)
+      ) as { mob: PileMob; sprite: Sprite }[];
+
+      const sum = nearby.map(({ mob }) => mob.size).reduce((a, b) => a + b, 0);
+
+      if (sum === this.opts.altarTarget) {
+        for (let i = -1; i < 2; i++) {
+          for (let j = -1; j < 2; j++) {
+            if (this.terrain[mob.pos[0] + i][mob.pos[1] + j] === Terrain.unlitTorch) {
+              this.lightTorch(mob.pos[0] + i, mob.pos[1] + j);
+            }
+          }
+        }
+        return true;
+      } else {
+        for (let i = -1; i < 2; i++) {
+          for (let j = -1; j < 2; j++) {
+            if (this.terrain[mob.pos[0] + i][mob.pos[1] + j] === Terrain.litTorch) {
+              this.unlightTorch(mob.pos[0] + i, mob.pos[1] + j);
+            }
+          }
+        }
+        return false;
+      }
+    }).every((x) => x);
+
+    if (finished) this.declareFinished();
+  }
+
+  tryMovePlayer (delta: [number, number]): boolean {
+    const [oi, oj] = this.pos;
+    const [i, j] = [this.pos[0] + delta[0], this.pos[1] + delta[1]];
+    // May not go backward on ice
+    if ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]]) &&
+        this.playerTarget[0] === this.pos[0] - delta[0] &&
+        this.playerTarget[1] === this.pos[1] - delta[1]) {
+      return false;
+    }
+
+    let moved = false;
+
+    if (i >= 0 && i < this.width && j >= 0 && j < this.height) {
+      if (this.isPassable(i, j)) {
+        this.pos[0] = i;
+        this.pos[1] = j;
+  
+        moved = true;
+      } else {
+        moved = this.tryPush(i, j, i + delta[0], j + delta[1]);
+
+        if (moved) {
+          this.checkAltarVictory();
+        }
+      }
+    }
+    if (moved && this.pullingMob) {
+      this.pullingMob.mob.pos[0] = oi;
+      this.pullingMob.mob.pos[1] = oj;
+      this.pullingMob.sprite.x = oi * this.scale;
+      this.pullingMob.sprite.y = oj * this.scale;
+    }
+
+    this.playerTarget = [i + delta[0], j + delta[1]];
+    if (moved && [Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
+      return this.tryMovePlayer(delta);
+    }
+
+    this.player.texture = (
+      delta[0] === 1 ? this.textures.right1 :
+      delta[0] === -1 ? this.textures.left1 :
+      delta[1] === -1 ? this.textures.back :
+      this.textures.face
+    );
+
+    return moved;
+  }
+
   handleKeys (keysdown: Record<string, boolean>) {
     if (this.displayingText) {
       this.removeText();
       return;
     }
     const [i, j] = this.pos;
-    if (i === 2 && j === 2) this.active = true;
+    if (this.opts.hRoot && i === this.opts.hRoot[0] && j === this.opts.hRoot[1]) this.active = true;
 
     let moved = false;
 
     // Movement
     if (keysdown['ArrowRight']) {
-      if (i < this.width - 1 && this.isPassable(i + 1, j)) {
-        this.pos[0] += 1;
-        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
-          this.pos[0] += 1;
-        }
-        moved = true;
-      }
-      this.playerTarget = [this.pos[0] + 1, this.pos[1]];
-
-      if (![this.textures.right1, this.textures.right2].includes(this.player.texture)) {
-        this.player.texture = this.textures.right1;
-      }
+      moved = this.tryMovePlayer([1, 0]);
     }
     else if (keysdown['ArrowLeft']) {
-      if (i > 0 && this.isPassable(i - 1, j)) {
-        this.pos[0] -= 1;
-        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
-          this.pos[0] -= 1;
-        }
-        moved = true;
-      }
-      this.playerTarget = [this.pos[0] - 1, this.pos[1]];
-
-      if (![this.textures.left1, this.textures.left2].includes(this.player.texture)) {
-        this.player.texture = this.textures.left1;
-      }
+      moved = this.tryMovePlayer([-1, 0]);
     }
     else if (keysdown['ArrowUp']) {
-      if (j > 0 && this.isPassable(i, j - 1)) {
-        this.pos[1] -= 1;
-        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
-          this.pos[1] -= 1;
-        }
-        moved = true;
-      }
-      this.playerTarget = [this.pos[0], this.pos[1] - 1];
-
-      this.player.texture = this.textures.back;
+      moved = this.tryMovePlayer([0, -1]);
     }
     else if (keysdown['ArrowDown']) {
-      if (j < this.height - 1 && this.isPassable(i, j + 1)) {
-        this.pos[1] += 1;
-        while ([Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
-          this.pos[1] += 1;
-        }
-        moved = true;
-      }
-      this.playerTarget = [this.pos[0], this.pos[1] + 1];
-
-      this.player.texture = this.textures.face;
+      moved = this.tryMovePlayer([0, 1]);
     }
     else if (keysdown['w']) {
-      const interacted = this.mobs.find(({ mob }) => mob.pos[0] === this.playerTarget[0] && mob.pos[1] === this.playerTarget[1]);
-      if (interacted && !interacted.mob.revealColor && !this.finished) {
-        const { mob, sprite } = interacted;
-        mob.guessedColor = nextColor(mob.guessedColor);
-        sprite.texture = this.textures[knightTextureNames[mob.guessedColor]];
+      if (this.pullingMob) {
+        this.pullingMob = null;
+      } else {
+        const interacted = this.mobs.find(({ mob }) => mob.pos[0] === this.playerTarget[0] && mob.pos[1] === this.playerTarget[1]);
+        if (interacted) {
+          if (interacted.mob instanceof KnightMob && !interacted.mob.revealColor && !this.finished) {
+            const { mob, sprite } = interacted;
+            mob.guessedColor = nextColor(mob.guessedColor);
+            sprite.texture = this.textures[knightTextureNames[mob.guessedColor]];
 
-        const knights = this.mobs.filter(({ mob }) => mob instanceof KnightMob);
-        const knightsByName: Record<string, KnightMob> = {};
-        knights.forEach((knight) => {
-          knightsByName[knight.mob.name] = knight.mob;
-        });
+            const knights = this.mobs.filter(({ mob }) => mob instanceof KnightMob) as { mob: KnightMob; sprite: Sprite }[];
+            const knightsByName: Record<string, KnightMob> = {};
+            knights.forEach((knight) => {
+              knightsByName[knight.mob.name] = knight.mob;
+            });
 
-        if (knights.every(({ mob }) => mob.guessedColor === mob.trueColor)) this.declareFinished();
+            if (knights.every(({ mob }) => mob.guessedColor === mob.trueColor)) this.declareFinished();
+          } else if (interacted.mob instanceof PileMob) {
+            this.pullingMob = interacted;
+          }
+        }
       }
     }
     else if (keysdown['q']) {
       const interacted = this.mobs.find(({ mob }) => mob.pos[0] === this.playerTarget[0] && mob.pos[1] === this.playerTarget[1]);
       if (interacted) {
         const { mob } = interacted;
-        this.displayText([
-          `I am ${mob.name}${mob.revealColor ? ` the ${mob.trueColor[0].toUpperCase() + mob.trueColor.substring(1)}` : ''}.`,
-          ...mob.declarations
-        ]);
+        if (mob instanceof KnightMob) {
+          this.displayText([
+            `I am ${mob.name}${mob.revealColor ? ` the ${mob.trueColor[0].toUpperCase() + mob.trueColor.substring(1)}` : ''}.`,
+            ...mob.declarations
+          ]);
+        }
       }
     }
 
     // Hamiltonian path puzzle
     if (
-        this.opts.torchPuzzle &&
+        this.opts.hRoot &&
         moved &&
         this.terrain[this.pos[0]][this.pos[1]] === Terrain.litTorch &&
         !this.finished) {
       this.active = false;
       for (let oi = 0; oi < this.width; oi++) {
         for (let oj = 0; oj < this.height; oj++) {
-          if (this.terrain[oi][oj] === Terrain.litTorch && !(oi === 2 && oj === 2)) {
-            this.terrain[oi][oj] = Terrain.unlitTorch;
-            this.tiles[oi][oj].texture = this.textures.lightMid;
-            this.tiles[oi][oj].removeChild(this.tiles[oi][oj].children[0]);
+          if (this.terrain[oi][oj] === Terrain.litTorch && !(oi === this.opts.hRoot[0] && oj === this.opts.hRoot[1])) {
+            this.unlightTorch(oi, oj);
           }
         }
       }
@@ -643,20 +881,34 @@ class ActiveBoard {
     }
 
     // Hamiltonian path puzzle
-    if (this.opts.torchPuzzle && this.terrain[i][j] === Terrain.unlitTorch && this.active) {
-      this.terrain[i][j] = Terrain.litTorch;
+    if (this.opts.hRoot && this.terrain[i][j] === Terrain.unlitTorch && this.active) {
+      this.lightTorch(i, j);
 
       // Finished?
       if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unlitTorch))) {
         this.declareFinished();
       }
-
-      this.tiles[i][j].texture = this.textures.litMid;
-      this.addBulb(this.tiles[i][j]);
     }
 
     this.player.position.x = this.pos[0] * this.scale;
     this.player.position.y = this.pos[1] * this.scale;
+  }
+
+  lightTorch (i: number, j: number) {
+    if (this.terrain[i][j] === Terrain.unlitTorch) {
+      this.terrain[i][j] = Terrain.litTorch;
+
+      this.tiles[i][j].texture = this.textures.litMid;
+      this.addBulb(this.tiles[i][j]);
+    }
+  }
+
+  unlightTorch (i: number, j: number) {
+    if (this.terrain[i][j] === Terrain.litTorch) {
+      this.terrain[i][j] = Terrain.unlitTorch;
+      this.tiles[i][j].texture = this.textures.lightMid;
+      this.tiles[i][j].removeChild(this.tiles[i][j].children[0]);
+    }
   }
 
   addBulb (sprite: Sprite) {
@@ -745,6 +997,7 @@ async function main() {
     platformBroken: await Assets.load('./assets/platform-broken.png'),
     bridge: await Assets.load('./assets/bridge.png'),
     stoneTop: await Assets.load('./assets/stone-top.png'),
+    stonePurple: await Assets.load('./assets/stone-purple.png'),
     stoneMid: await Assets.load('./assets/stone-mid.png'),
     stoneUnder: await Assets.load('./assets/stone-under.png'),
     lightTop: await Assets.load('./assets/light-top.png'),
@@ -762,6 +1015,9 @@ async function main() {
     ice: await Assets.load('./assets/ice.png'),
     unusedIceRune: await Assets.load('./assets/ice-rune-unused.png'),
     usedIceRune: await Assets.load('./assets/ice-rune-used.png'),
+    orbs4: await Assets.load('./assets/orbs-4.png'),
+    orbs2: await Assets.load('./assets/orbs-2.png'),
+    orbs1: await Assets.load('./assets/orbs-1.png'),
   };
 
   textures.left1.rotate = groupD8.MIRROR_HORIZONTAL;
@@ -831,7 +1087,7 @@ async function main() {
   }
   function generateGoishiHiroi (roomSize: number) {
     const newBoard = new GoishiHiroiBoard(
-      roomSize, roomSize, roomSize * 2
+      Math.ceil(roomSize / 2) * 2 + 1, Math.ceil(roomSize / 2) * 2 + 1, Math.ceil(roomSize * roomSize / 4)
     );
     return ActiveBoard.fromGoishiHiroi(
       newBoard,
@@ -845,14 +1101,30 @@ async function main() {
     );
   }
 
+  function generateAltar (roomSize: number) {
+    const newBoard = new AltarBoard(
+      Math.ceil(roomSize / 3)
+    );
+    return ActiveBoard.fromAltar(
+      newBoard,
+      {
+        textures,
+        scale: 40,
+        app,
+        blurFilter: blur,
+        lightingLayer: lighting,
+      }
+    );
+  }
+
   function generateRandomBoard () {
-    const selection = Math.floor(Math.random() * 2);
+    const selection = Math.floor(Math.random() * 3);
     if (selection === 0) {
       return generateHamiltonian(roomSize);
     } else if (selection === 1) {
       return generateGoishiHiroi(roomSize);
     } else {
-      return generateKnightGraph(roomSize);
+      return generateAltar(roomSize);
     }
   }
 

@@ -18,7 +18,7 @@ export default class GoishiHiroiBoard {
       [0, 0, null],
     );
 
-    const taken = new Set<string>();
+    const taken = new Set<string>(`0:0`);
 
     for (let i = 0; i < lengthLimit; i++) {
       const [i, j, d] = this.goldPath.head;
@@ -52,9 +52,12 @@ export default class GoishiHiroiBoard {
       candidates.filter(([mi, mj]) => {
         if ((mi <= ni && mi >= i || mi <= i && mi >= ni) &&
             (mj <= nj && mj >= j || mj <= j && mj >= nj)) {
+          console.log(mi, mj);
           taken.add(`${mi}:${mj}`);
         }
       });
+
+      console.log([ni, nj]);
 
       this.goldPath = new List([ni, nj, direction], this.goldPath);
     }

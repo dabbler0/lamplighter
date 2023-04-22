@@ -15,15 +15,18 @@ export default class HamiltonianBoard {
     this.width = w;
     this.height = h;
 
+    const startX = Math.floor(this.width / 2);
+    const startY = this.height - 1;
+
     // "random nudging" to create the path
     this.goldPath = new List(
-      [0, 1],
+      [startX, startY - 1],
       new List(
-        [1, 1],
+        [startX - 1, startY - 1],
         new List(
-          [1, 0],
+          [startX - 1, startY],
           new List(
-            [0, 0]
+            [startX, startY]
           )
         )
       )
