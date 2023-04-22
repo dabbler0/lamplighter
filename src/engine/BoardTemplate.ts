@@ -19,6 +19,7 @@ export enum Terrain {
 export type LevelOptions = {
   hRoot?: [number, number]
   altarTarget?: number;
+  goishiHiroi?: boolean;
 };
 export interface Mob {
   pos: [number, number];
@@ -255,7 +256,9 @@ export default class BoardTemplate {
     return new this({
       terrain,
       mobs: [],
-      opts: {},
+      opts: {
+        goishiHiroi: true,
+      },
     });
   }
 

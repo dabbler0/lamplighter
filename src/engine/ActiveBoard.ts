@@ -120,6 +120,7 @@ export default class ActiveBoard {
   // Active puzzle things
   active: boolean = false;
   finished: boolean = false;
+  pathSprites: Graphics[] = [];
 
   // Player
   pos: [number, number];
@@ -556,6 +557,24 @@ export default class ActiveBoard {
       this.playerTarget = [i, j];
     }
 
+    if (moved && this.active) {
+      const tracker = new Graphics();
+      tracker.beginFill(this.opts.hRoot ? 0x00ffaa : 0xffffff);
+      if (oi === i) {
+        tracker.drawRect(this.scale * (1 / 2 - 1 / 20), this.opts.hRoot ? -this.scale / 3 : 0, this.scale / 10, this.scale);
+      } else {
+        tracker.drawRect(0, this.scale * (1 / 2 - 1 / 20 - (this.opts.hRoot ? 1/3 : 0)), this.scale, this.scale / 10);
+      }
+      tracker.endFill();
+
+      tracker.alpha = 0.3;
+
+      tracker.position.x = (i + oi) / 2 * this.scale;
+      tracker.position.y = (j + oj) / 2 * this.scale;
+      this.pathSprites.push(tracker);
+      this.room.addChild(tracker);
+    }
+
     if (moved && [Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
       return this.tryMovePlayer(delta);
     }
@@ -571,7 +590,9 @@ export default class ActiveBoard {
     if (this.pendingAnimations) return;
 
     const [i, j] = this.pos;
-    if (this.opts.hRoot && i === this.opts.hRoot[0] && j === this.opts.hRoot[1]) this.active = true;
+    if (this.opts.hRoot && i === this.opts.hRoot[0] && j === this.opts.hRoot[1] && !this.finished) {
+      this.active = true;
+    }
 
     let moved = false;
 
@@ -632,6 +653,9 @@ export default class ActiveBoard {
         this.terrain[this.pos[0]][this.pos[1]] === Terrain.litTorch &&
         !this.finished) {
       this.active = false;
+      this.pathSprites.forEach((sprite) => this.room.removeChild(sprite));
+      this.pathSprites = [];
+
       for (let oi = 0; oi < this.width; oi++) {
         for (let oj = 0; oj < this.height; oj++) {
           if (this.terrain[oi][oj] === Terrain.litTorch && !(oi === this.opts.hRoot[0] && oj === this.opts.hRoot[1])) {
@@ -644,29 +668,35 @@ export default class ActiveBoard {
     const [ni, nj] = this.pos;
 
     // Goishi Hiroi puzzle
-    if (this.terrain[ni][nj] === Terrain.unusedIceRune) {
-      this.terrain[ni][nj] = Terrain.usedIceRune;
-      this.tiles[ni][nj].texture = this.textures.usedIceRune;
-      this.tiles[ni][nj].removeChild(this.tiles[ni][nj].children[0]);
+    if (this.opts.goishiHiroi) {
+      if (this.terrain[ni][nj] === Terrain.unusedIceRune) {
+        if (!this.active) this.active = true;
+        this.terrain[ni][nj] = Terrain.usedIceRune;
+        this.tiles[ni][nj].texture = this.textures.usedIceRune;
+        this.tiles[ni][nj].removeChild(this.tiles[ni][nj].children[0]);
 
-      if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unusedIceRune))) {
-        this.declareFinished();
-      }
-    } else if (this.terrain[ni][nj] === Terrain.path && !this.finished) {
-      for (let oi = 0; oi < this.width; oi++) {
-        for (let oj = 0; oj < this.height; oj++) {
-          if (this.terrain[oi][oj] === Terrain.usedIceRune) {
-            this.terrain[oi][oj] = Terrain.unusedIceRune;
-            this.tiles[oi][oj].texture = this.textures.unusedIceRune;
-            this.addBulb(this.tiles[oi][oj]);
+        if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unusedIceRune))) {
+          this.declareFinished();
+        }
+      } else if (this.terrain[ni][nj] === Terrain.path && !this.finished) {
+        this.active = false;
+        this.pathSprites.forEach((sprite) => this.room.removeChild(sprite));
+        this.pathSprites = [];
+        for (let oi = 0; oi < this.width; oi++) {
+          for (let oj = 0; oj < this.height; oj++) {
+            if (this.terrain[oi][oj] === Terrain.usedIceRune) {
+              this.terrain[oi][oj] = Terrain.unusedIceRune;
+              this.tiles[oi][oj].texture = this.textures.unusedIceRune;
+              this.addBulb(this.tiles[oi][oj]);
+            }
           }
         }
       }
     }
 
     // Hamiltonian path puzzle
-    if (this.opts.hRoot && this.terrain[i][j] === Terrain.unlitTorch && this.active) {
-      this.lightTorch(i, j);
+    if (this.opts.hRoot && this.terrain[this.pos[0]][this.pos[1]] === Terrain.unlitTorch && this.active) {
+      this.lightTorch(this.pos[0], this.pos[1]);
 
       // Finished?
       if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unlitTorch))) {
@@ -709,6 +739,15 @@ export default class ActiveBoard {
 
   declareFinished () {
     this.finished = true;
+    this.active = false;
+
+    for (let i = 0; i < this.width; i++) {
+      for (let j = 0; j < this.width; j++) {
+        if (this.terrain[i][j] === Terrain.usedIceRune) {
+          this.addBulb(this.tiles[i][j]);
+        }
+      }
+    }
 
     (Object.keys(this.doors) as Direction[]).forEach((key) => {
       if (this.allDirs[key] && key !== this.startDir) {
@@ -763,7 +802,7 @@ export default class ActiveBoard {
 
     for (let i = 0; i < this.width; i++) {
       for (let j = 0; j < this.height; j++) {
-        if ((this.terrain[i][j] === Terrain.litTorch || this.terrain[i][j] === Terrain.unusedIceRune) && Math.random() > Math.pow(0.5, delta * 0.025)) {
+        if ((this.terrain[i][j] === Terrain.litTorch || this.terrain[i][j] === Terrain.unusedIceRune || this.terrain[i][j] === Terrain.usedIceRune && this.finished) && Math.random() > Math.pow(0.5, delta * 0.025)) {
           this.addParticle(i * this.scale + this.scale / 2, j * this.scale + 3);
         }
       }
