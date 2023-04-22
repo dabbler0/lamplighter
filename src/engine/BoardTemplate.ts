@@ -1,12 +1,9 @@
-import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, RenderTexture, groupD8 } from 'pixi.js';
-import { DropShadowFilter } from '@pixi/filter-drop-shadow';
-import { Layer, Stage } from '@pixi/layers';
-import Direction from './Direction';
-import List from './List';
-import HamiltonianBoard from './HamiltonianBoard';
-import GoishiHiroiBoard from './GoishiHiroiBoard';
-import KnightGraph, { KnightColor, Knight } from './KnightGraph';
-import AltarBoard from './AltarBoard';
+import Direction from '../util/Direction';
+import List from '../util/List';
+import HamiltonianBoard from '../generators/HamiltonianBoard';
+import GoishiHiroiBoard from '../generators/GoishiHiroiBoard';
+import KnightGraph, { KnightColor, Knight } from '../generators/KnightGraph';
+import AltarBoard from '../generators/AltarBoard';
 
 export enum Terrain {
   water = 'water',

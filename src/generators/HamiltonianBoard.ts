@@ -1,8 +1,5 @@
-import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, groupD8 } from 'pixi.js';
-import { DropShadowFilter } from '@pixi/filter-drop-shadow';
-import { Layer, Stage } from '@pixi/layers';
-import List from './List';
-import Direction, { add } from './Direction';
+import List from '../util/List';
+import Direction, { add } from '../util/Direction';
 
 export default class HamiltonianBoard {
   goldPath: List<[number, number]>;
