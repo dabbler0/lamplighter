@@ -116,7 +116,10 @@ export default class HamiltonianBoard {
       insertList.next = head;
     }
 
-    this.addEdge([0, 0], [0, 1]);
+    this.addEdge(
+      [startX, startY - 1],
+      [startX, startY]
+    );
 
     const pathElements = new Set<string>();
 

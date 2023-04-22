@@ -1,12 +1,13 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, RenderTexture, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
-import Direction from './Direction';
+import Direction, { opposites } from './Direction';
 import List from './List';
 import HamiltonianBoard from './HamiltonianBoard';
 import GoishiHiroiBoard from './GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from './KnightGraph';
 import AltarBoard from './AltarBoard';
+import BoardTemplate, { Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob } from './BoardTemplate';
 
 function nextColor(c: KnightColor) {
   if (c === KnightColor.red) {
@@ -17,6 +18,25 @@ function nextColor(c: KnightColor) {
     return KnightColor.red;
   }
 }
+
+const unlockedDoorTextureName = {
+  [Direction.up]: 'stoneGo',
+  [Direction.down]: 'stoneGoDown',
+  [Direction.right]: 'stoneGoRight',
+  [Direction.left]: 'stoneGoLeft',
+};
+
+enum BoardType {
+  GoishiHiroi = 'GoishiHiroi',
+  Hamiltonian = 'Hamiltonian',
+  Altar = 'Altar'
+};
+
+const boardTypes = [
+  BoardType.GoishiHiroi,
+  BoardType.Hamiltonian,
+  BoardType.Altar
+];
 
 // Memoized orb texture generator
 const orbTextures: Record<number, Texture> = {};
@@ -55,79 +75,11 @@ function getOrbTexture(n: number, textures: Record<string, Texture>, app: Applic
   return renderTexture;
 }
 
-enum Terrain {
-  water = 'water',
-  litTorch = 'litTorch',
-  unlitTorch = 'unlitTorch',
-  path = 'path',
-  ice = 'ice',
-  unusedIceRune = 'unusedIceRune',
-  usedIceRune = 'usedIceRune',
-  purple = 'purple',
-}
-
-type LevelOptions = {
-  hRoot?: [number, number]
-  altarTarget?: number;
-};
-
-class PileMob {
-  size: number;
-  pos: [number, number];
-
-  constructor({
-    size, pos
-  }: { size: number; pos: [number, number] }) {
-    this.size = size;
-    this.pos = pos;
-  }
-}
-
-class AltarMob {
-  pos: [number, number]
-
-  constructor({ pos }: { pos: [number, number] }) {
-    this.pos = pos;
-  }
-}
-
-class KnightMob {
-  trueColor: KnightColor;
-  guessedColor: KnightColor;
-  name: string;
-  declarations: string[];
-  enemies: string[];
-  pos: [number, number];
-  revealColor: boolean;
-
-  constructor ({
-    trueColor, name, declarations, pos,
-    revealColor, enemies
-  }: {
-    trueColor: KnightColor;
-    name: string;
-    declarations: string[];
-    revealColor: boolean;
-    pos: [number, number];
-    enemies: string[];
-  }) {
-    this.revealColor = revealColor;
-    this.trueColor = trueColor;
-    this.guessedColor = KnightColor.red;
-    this.name = name;
-    this.declarations = declarations;
-    this.pos = pos;
-    this.enemies = enemies;
-  }
-}
-
 const knightTextureNames = {
   [KnightColor.red]: 'redKnight',
   [KnightColor.blue]: 'blueKnight',
   [KnightColor.green]: 'greenKnight',
 };
-
-type Mob = KnightMob | AltarMob | PileMob;
 
 function isPassable(t: Terrain) {
   return t !== Terrain.water;
@@ -187,8 +139,11 @@ class ActiveBoard {
   playerTarget: [number, number];
   pullingMob: { mob: Mob; sprite: Sprite };
 
+  allDirs: Record<Direction, boolean>;
+  startDir: Direction;
+
   // Room container
-  door: Sprite;
+  doors: Record<Direction, Sprite>;
   room: Container;
   height: number;
   width: number;
@@ -223,6 +178,8 @@ class ActiveBoard {
     blurFilter,
     lightingLayer,
     opts,
+    startDir,
+    allDirs,
   }: {
     terrain: Terrain[][];
     mobs: Mob[];
@@ -232,7 +189,11 @@ class ActiveBoard {
     blurFilter: Filter;
     lightingLayer: Layer;
     opts: LevelOptions;
+    startDir: Direction;
+    allDirs: Record<Direction, boolean>;
   }) {
+    this.startDir = startDir;
+    this.allDirs = allDirs;
     this.textures = textures;
     this.app = app;
     this.scale = scale;
@@ -343,14 +304,30 @@ class ActiveBoard {
       }
     });
 
+    const createDoor = (x: number, y: number, texture: Texture, visible: boolean) => {
+      const door = new Sprite(texture);
+      this.room.addChild(door);
+      door.position.x = x * this.scale;
+      door.position.y = y * this.scale;
+      door.scale.x = this.scale / 200;
+      door.scale.y = this.scale / 200;
 
-    this.door = new Sprite(this.textures.door);
-    this.room.addChild(this.door);
-    this.door.position.x = Math.floor(this.width / 2) * this.scale;
-    this.door.position.y = -this.scale;
+      door.visible = visible;
 
-    this.door.scale.x = this.scale / 200;
-    this.door.scale.y = this.scale / 200;
+      return door;
+    }
+
+    this.doors = {
+      [Direction.up]: createDoor(Math.floor(this.width / 2), -1, this.textures.stoneStop, allDirs[Direction.up]),
+      [Direction.down]: createDoor(Math.floor(this.width / 2), this.height, this.textures.stoneStopDown, allDirs[Direction.down]),
+      [Direction.left]: createDoor(-1, Math.floor(this.height / 2), this.textures.stoneStopLeft, allDirs[Direction.left]),
+      [Direction.right]: createDoor(this.width, Math.floor(this.height / 2), this.textures.stoneStopRight, allDirs[Direction.right]),
+    };
+
+    if (startDir) {
+      this.addBulb(this.doors[startDir]);
+      this.doors[startDir].texture = this.textures[unlockedDoorTextureName[startDir]]
+    }
 
     this.player = new Sprite(
       textures.face
@@ -361,10 +338,26 @@ class ActiveBoard {
     this.player.scale.x = scale / 200;
     this.player.scale.y = scale / 200;
 
-    this.pos = [
-      Math.floor(this.width / 2),
-      this.height - 1
-    ];
+    this.pos = startDir === Direction.up ? 
+      [
+        Math.floor(this.width / 2),
+        0
+      ] :
+      startDir === Direction.left ?
+      [
+        0,
+        Math.floor(this.height / 2),
+      ] :
+      startDir == Direction.right ?
+      [
+        this.width - 1,
+        Math.floor(this.height / 2),
+      ] :
+      [
+        Math.floor(this.width / 2),
+        this.height - 1,
+      ];
+
     this.playerTarget = [
       this.pos[0],
       this.pos[1] - 1
@@ -380,8 +373,6 @@ class ActiveBoard {
     this.finished = false;
 
     this.particles = [];
-
-    this.app.stage.addChild(this.room);
 
     this.text = new BitmapText('', { fontName: 'TitleFont' });
 
@@ -400,252 +391,6 @@ class ActiveBoard {
     const background = new Sprite(this.app.renderer.generateTexture(textWrapperTexture));
     this.textWrapper.addChild(background);
     this.textWrapper.addChild(this.text); 
-  }
-
-  static fromKnightGraph(knightGraph: KnightGraph, rest: {
-    textures: Record<string, Texture>;
-    scale: number;
-    app: Application;
-    blurFilter: Filter;
-    lightingLayer: Layer;
-  }) {
-    const size = Object.keys(knightGraph.knights).length;
-
-    const width = Math.ceil(Math.sqrt(size));
-    const height = Math.ceil(Math.sqrt(size));
-
-    const mobs: KnightMob[] = [];
-
-    const terrain: Terrain[][] = [];
-
-    for (let i = 0; i < width * 2 + 3; i++) {
-      terrain[i] = [];
-      for (let j = 0; j < height * 2 + 3; j++) {
-        terrain[i][j] = Terrain.path;
-      }
-    }
-
-    for (let i = 0; i < width * 2 + 1; i++) {
-      terrain[i + 1][height * 2 + 1] = Terrain.water;
-      terrain[i + 1][1] = Terrain.water;
-    }
-    for (let j = 0; j < height * 2 + 1; j++) {
-      terrain[width * 2 + 1][j + 1] = Terrain.water;
-      terrain[1][j + 1] = Terrain.water;
-    }
-
-    for (let i = 0; i < width - 1; i++) {
-      for (let j = 0; j < height - 1; j++) {
-        terrain[i * 2 + 3][j * 2 + 3] = Terrain.litTorch;
-      }
-    }
-
-    terrain[width + 1][height * 2 + 1] = Terrain.path;
-    terrain[1][1] = Terrain.litTorch;
-    terrain[1][height * 2 + 1] = Terrain.litTorch;
-    terrain[width * 2 + 1][1] = Terrain.litTorch;
-    terrain[width * 2 + 1][height * 2 + 1] = Terrain.litTorch;
-
-    const rendering = knightGraph.render();
-
-    let index = 0;
-    const taken = new Set<number>([width * (height - 1) + (width - 1) / 2]);
-
-    Object.keys(rendering).forEach((name) => {
-      mobs.push(new KnightMob({
-        trueColor: knightGraph.knights[name].color,
-        name,
-        declarations: rendering[name],
-        pos: [(index % width) * 2 + 2, Math.floor(index / width) * 2 + 2],
-        enemies: Array.from(knightGraph.knights[name].enemies),
-        revealColor: false,
-      }));
-      taken.add(index);
-      const skip = Math.floor(Math.random() * (width * height - taken.size));
-      for (let i = 0; i < skip + 1; i++) {
-        index = (index + 1) % (width * height);
-        while (taken.has(index)) {
-          index = (index + 1) % (width * height);
-        }
-      }
-    });
-
-    // Pick random mob
-    const king = mobs[Math.floor(Math.random() * mobs.length)];
-    king.revealColor = true;
-    king.guessedColor = king.trueColor;
-
-    const queenName = king.enemies[Math.floor(Math.random() * king.enemies.length)];
-    const queen = mobs.find((mob) => mob.name === queenName);
-    queen.revealColor = true;
-    queen.guessedColor = queen.trueColor;
-
-    return new this({
-      terrain,
-      mobs,
-      opts: {},
-      ...rest
-    });
-  }
-
-  static fromAltar(board: AltarBoard, rest: {
-    textures: Record<string, Texture>;
-    scale: number;
-    app: Application;
-    blurFilter: Filter;
-    lightingLayer: Layer;
-  }) {
-    const terrain: Terrain[][] = [];
-    const mobs: Mob[] = [];
-
-    const color = Object.values(KnightColor)[Math.floor(Math.random() * 3)];
-
-    for (let i = 0; i < board.numBuckets * 4 + 5; i++) {
-      terrain[i] = [];
-      for (let j = 0; j < 12; j++) {
-        terrain[i][j] = Terrain.path;
-      }
-    }
-
-    for (let i = 0; i < board.numBuckets * 4 + 3; i++) {
-      terrain[i + 1][1] = Terrain.water;
-      terrain[i + 1][10] = Terrain.water;
-    }
-    terrain[Math.floor((board.numBuckets * 4 + 5) / 2)][10] = Terrain.path;
-    terrain[Math.floor((board.numBuckets * 4 + 5) / 2)][1] = Terrain.path;
-
-    for (let j = 0; j < 10; j++) {
-      terrain[1][j + 1] = Terrain.water;
-      terrain[board.numBuckets * 4 + 3][j + 1] = Terrain.water;
-    }
-
-    for (let i = 0; i < board.numBuckets; i++) {
-      mobs.push(new AltarMob({
-        pos: [4 + i * 4, 3]
-      }));
-      for (let j = 0; j < 3; j++) {
-        terrain[3 + i * 4 + j][4] = Terrain.purple;
-      }
-      terrain[3 + i * 4][3] = Terrain.unlitTorch;
-      terrain[5 + i * 4][3] = Terrain.unlitTorch;
-    }
-
-    const piles = board.beadPiles.slice(0).sort(() => Math.random() < 0.5 ? 1 : -1);
-
-    for (let i = 0; i < piles.length; i++) {
-      if (piles[i] !== 0) {
-        mobs.push(new PileMob({
-          size: piles[i],
-          pos: [4 + i, 8]
-        }));
-      }
-    }
-
-    return new this({
-      terrain,
-      mobs,
-      opts: { altarTarget: board.numBuckets * 3 },
-      ...rest,
-    });
-  }
-
-  static fromGoishiHiroi(board: GoishiHiroiBoard, rest: {
-    textures: Record<string, Texture>;
-    scale: number;
-    app: Application;
-    blurFilter: Filter;
-    lightingLayer: Layer;
-  }) {
-    const terrain: Terrain[][] = [];
-    const { width, height } = board;
-
-    for (let i = 0; i < width + 2; i++) {
-      terrain[i] = [];
-      for (let j = 0; j < height + 2; j++) {
-        terrain[i][j] = Terrain.path;
-      }
-    }
-
-    for (let i = 0; i < width; i++) {
-      for (let j = 0; j < height; j++) {
-        terrain[i + 1][j + 1] = Terrain.ice;
-      }
-    }
-
-    for (let cursor = board.goldPath; !!cursor; cursor = cursor.prev) {
-      const [i, j] = cursor.head;
-      terrain[i + 1][j + 1] = Terrain.unusedIceRune;
-    }
-
-    return new this({
-      terrain,
-      mobs: [],
-      opts: {},
-      ...rest
-    });
-  }
-
-  static fromHamiltonian(hamiltonianBoard: HamiltonianBoard, rest: {
-    textures: Record<string, Texture>;
-    scale: number;
-    app: Application;
-    blurFilter: Filter;
-    lightingLayer: Layer;
-  }) {
-    const { width, height } = hamiltonianBoard;
-
-    const terrain: Terrain[][] = [];
-
-    for (let i = 0; i < width * 2 + 3; i++) {
-      terrain[i] = [];
-      for (let j = 0; j < height * 2 + 3; j++) {
-        terrain[i][j] = Terrain.water;
-      }
-    }
-
-    for (let i = 0; i < width; i++) {
-      for (let j = 0; j < height; j++) {
-        terrain[i * 2 + 2][j * 2 + 2] = Terrain.path;
-      }
-    }
-
-    for (let cursor = hamiltonianBoard.goldPath; !!cursor; cursor = cursor.prev) {
-      const [i, j] = cursor.head;
-
-      if (hamiltonianBoard.degree(...cursor.head) >= 3) {
-        terrain[i * 2 + 2][j * 2 + 2] = Terrain.unlitTorch;
-      }
-    }
-
-    terrain[width + 1][height * 2 + 1] = Terrain.litTorch;
-
-    Array.from(hamiltonianBoard.edges).forEach((edge) => {
-      const [
-        [i1, j1],
-        [i2, j2]
-      ] = edge.split('::').map((x) => x.split(':').map(Number));
-
-      terrain[i1 + i2 + 2][j1 + j2 + 2] = Terrain.path;
-    });
-
-    for (let i = 0; i < width * 2 + 3; i++) {
-      terrain[0][i] = Terrain.path;
-      terrain[height * 2 + 2][i] = Terrain.path;
-    }
-
-    for (let i = 0; i < height * 2 + 3; i++) {
-      terrain[i][0] = Terrain.path;
-      terrain[i][width * 2 + 2] = Terrain.path;
-    }
-
-    terrain[width + 1][1] = Terrain.path;
-
-    return new this({
-      terrain,
-      mobs: [],
-      opts: { hRoot: [ width + 1, height * 2 + 1 ] },
-      ...rest
-    });
   }
 
   isPassable (i: number, j: number) {
@@ -766,7 +511,11 @@ class ActiveBoard {
       this.pullingMob.sprite.y = oj * this.scale;
     }
 
-    this.playerTarget = [i + delta[0], j + delta[1]];
+    if (moved) {
+      this.playerTarget = [i + delta[0], j + delta[1]];
+    } else {
+      this.playerTarget = [i, j];
+    }
     if (moved && [Terrain.ice, Terrain.usedIceRune].includes(this.terrain[this.pos[0]][this.pos[1]])) {
       return this.tryMovePlayer(delta);
     }
@@ -926,16 +675,12 @@ class ActiveBoard {
   declareFinished () {
     this.finished = true;
 
-    const doorbulb = new Graphics();
-    doorbulb.beginFill(0xffffff, 0.7);
-    doorbulb.drawCircle(0, 0, 500);
-    doorbulb.endFill();
-    doorbulb.position.x = 100;
-    doorbulb.position.y = 100;
-    (doorbulb as any).parentLayer = this.lightingLayer;
-    doorbulb.filters = [this.blurFilter];
-
-    this.door.addChild(doorbulb);
+    (Object.keys(this.doors) as Direction[]).forEach((key) => {
+      if (this.allDirs[key] && key !== this.startDir) {
+        this.doors[key].texture = this.textures[unlockedDoorTextureName[key]];
+        this.addBulb(this.doors[key]);
+      }
+    });
   }
 
   addParticle (i: number, j: number) {
@@ -981,6 +726,81 @@ class ActiveBoard {
   }
 }
 
+class PossibleBoard {
+  constructor (
+    public pos: [number, number],
+    public dim: [number, number],
+    public level: number,
+    public type: BoardType,
+  ) {
+  }
+
+  intersects (other: PossibleBoard) {
+    return !(
+      other.pos[0] > this.pos[0] + this.dim[0] ||
+      this.pos[0] > other.pos[0] + other.dim[0] ||
+      other.pos[1] > this.pos[1] + this.dim[1] ||
+      this.pos[1] > other.pos[1] + other.dim[1]
+    );
+  }
+}
+
+class UnreifiedBoard extends PossibleBoard {
+  pos: [number, number];
+  dim: [number, number];
+  template: BoardTemplate;
+  level: number;
+  type: BoardType;
+
+  constructor ({
+    pos, template,
+    level, type,
+  }: {
+    pos: [number, number];
+    template: BoardTemplate;
+    level: number;
+    type: BoardType;
+  }) {
+    super(pos,
+      [template.terrain.length, template.terrain[0].length],
+      level,
+      type,
+    );
+    this.template = template;
+  }
+}
+
+class ReifiedBoard extends PossibleBoard {
+  pos: [number, number];
+  dim: [number, number];
+  board: ActiveBoard;
+  exits: Record<Direction, PossibleBoard | null>;
+  startDir: Direction;
+  level: number;
+  type: BoardType;
+
+  constructor ({
+    pos, board, startDir,
+    exits, level, type,
+  }: {
+    pos: [number, number];
+    board: ActiveBoard;
+    startDir: Direction;
+    exits: Record<Direction, PossibleBoard | null>;
+    level: number;
+    type: BoardType;
+  }) {
+    super(pos,
+      [board.width, board.height],
+      level,
+      type
+    );
+    this.startDir = startDir;
+    this.board = board;
+    this.exits = exits;
+  }
+}
+
 async function main() {
   const app = new Application<HTMLCanvasElement>();
 
@@ -997,6 +817,14 @@ async function main() {
     platformBroken: await Assets.load('./assets/platform-broken.png'),
     bridge: await Assets.load('./assets/bridge.png'),
     stoneTop: await Assets.load('./assets/stone-top.png'),
+    stoneGo: await Assets.load('./assets/stone-go.png'),
+    stoneGoDown: await Assets.load('./assets/stone-go-down.png'),
+    stoneGoRight: await Assets.load('./assets/stone-go-right.png'),
+    stoneGoLeft: await Assets.load('./assets/stone-go-left.png'),
+    stoneStop: await Assets.load('./assets/stone-stop.png'),
+    stoneStopDown: await Assets.load('./assets/stone-stop-down.png'),
+    stoneStopLeft: await Assets.load('./assets/stone-stop-left.png'),
+    stoneStopRight: await Assets.load('./assets/stone-stop-right.png'),
     stonePurple: await Assets.load('./assets/stone-purple.png'),
     stoneMid: await Assets.load('./assets/stone-mid.png'),
     stoneUnder: await Assets.load('./assets/stone-under.png'),
@@ -1025,8 +853,6 @@ async function main() {
 
   app.stage = new Stage();
 
-  let roomSize = 5;
-
   const lighting = new Layer();
   const blur = new BlurFilter(20);
   const smallBlur = new BlurFilter();
@@ -1053,121 +879,215 @@ async function main() {
 
   const keysdown: Record<string, boolean> = {};
 
-  function generateHamiltonian (roomSize: number) {
+  function generateHamiltonian (roomLevel: number) {
     const newBoard = new HamiltonianBoard(
-      roomSize,
-      roomSize
+      Math.floor(Math.sqrt(5 * roomLevel + 4)),
+      Math.floor(Math.sqrt(5 * roomLevel + 4))
     );
-    return ActiveBoard.fromHamiltonian(
-      newBoard,
-      {
-        textures,
-        scale: 40,
-        app,
-        blurFilter: blur,
-        lightingLayer: lighting,
-      }
-    );
+    return BoardTemplate.fromHamiltonian(newBoard);
   }
 
-  function generateKnightGraph (roomSize: number) {
+  function generateKnightGraph (roomLevel: number) {
     const newBoard = new KnightGraph(
-      Math.ceil((roomSize - 5) / 10)
+      Math.ceil((roomLevel - 5) / 10)
     );
-    return ActiveBoard.fromKnightGraph(
-      newBoard,
-      {
-        textures,
-        scale: 40,
-        app,
-        blurFilter: blur,
-        lightingLayer: lighting,
-      }
-    );
+    return BoardTemplate.fromKnightGraph(newBoard);
   }
-  function generateGoishiHiroi (roomSize: number) {
+  function generateGoishiHiroi (roomLevel: number) {
     const newBoard = new GoishiHiroiBoard(
-      Math.ceil(roomSize / 2) * 2 + 1, Math.ceil(roomSize / 2) * 2 + 1, Math.ceil(roomSize * roomSize / 4)
+      Math.floor(Math.sqrt(5 * roomLevel + 5)),
+      Math.floor(Math.sqrt(5 * roomLevel + 5)),
+      roomLevel,
     );
-    return ActiveBoard.fromGoishiHiroi(
-      newBoard,
-      {
-        textures,
-        scale: 40,
-        app,
-        blurFilter: blur,
-        lightingLayer: lighting,
-      }
-    );
+    return BoardTemplate.fromGoishiHiroi(newBoard);
   }
 
-  function generateAltar (roomSize: number) {
+  function generateAltar (roomLevel: number) {
     const newBoard = new AltarBoard(
-      Math.ceil(roomSize / 3)
+      Math.ceil(roomLevel / 3)
     );
-    return ActiveBoard.fromAltar(
-      newBoard,
-      {
-        textures,
-        scale: 40,
-        app,
-        blurFilter: blur,
-        lightingLayer: lighting,
-      }
-    );
+    return BoardTemplate.fromAltar(newBoard);
   }
 
-  function generateRandomBoard () {
-    const selection = Math.floor(Math.random() * 3);
-    if (selection === 0) {
-      return generateHamiltonian(roomSize);
-    } else if (selection === 1) {
-      return generateGoishiHiroi(roomSize);
-    } else {
-      return generateAltar(roomSize);
+  function generateTemplate (level: number, exclude: BoardType) {
+    const candidates = boardTypes.filter((x) => x !== exclude);
+    const selection = candidates[Math.floor(Math.random() * candidates.length)];
+    const template = 
+      selection === BoardType.GoishiHiroi ? generateGoishiHiroi(level) :
+      selection === BoardType.Hamiltonian ? generateHamiltonian(level)
+      : generateAltar(level);
+
+    return { template, type: selection };
+  }
+
+  let rooms: PossibleBoard[] = []
+
+  function placeTemplate (initial: PossibleBoard, dir: Direction, template: BoardTemplate): [number, number] {
+    if (dir === Direction.left) {
+      return [
+        initial.pos[0] - template.width() - 1,
+        initial.pos[1] + Math.floor(initial.dim[1] / 2) - Math.floor(template.height() / 2)
+      ];
+    } else if (dir === Direction.right) {
+      return [
+        initial.pos[0] + initial.dim[1] + 1,
+        initial.pos[1] + Math.floor(initial.dim[1] / 2) - Math.floor(template.height() / 2)
+      ];
+    } else if (dir === Direction.up) {
+      return [
+        initial.pos[0] + Math.floor(initial.dim[0] / 2) - Math.floor(template.height() / 2),
+        initial.pos[1] - template.height() - 1,
+      ];
+    } else if (dir === Direction.down) {
+      return [
+        initial.pos[0] + Math.floor(initial.dim[0] / 2) - Math.floor(template.height() / 2),
+        initial.pos[1] + initial.dim[1] + 1,
+      ];
     }
   }
 
-  let activeBoard = generateRandomBoard();
+  function reify (board: UnreifiedBoard, startDir?: Direction, prev?: ReifiedBoard) {
+    const exits: Record<Direction, PossibleBoard | null> = {
+      [Direction.left]: null,
+      [Direction.right]: null,
+      [Direction.up]: null,
+      [Direction.down]: null,
+    };
+    (Object.values(Direction) as Direction[]).forEach((dir) => {
+      if (dir === startDir) {
+        exits[dir] = prev;
+      } else {
+        const { template, type } = generateTemplate(board.level + 1, board.type);
+        const candidate = new UnreifiedBoard({
+          template,
+          level: board.level + 1,
+          pos: placeTemplate(board, dir, template),
+          type
+        });
+
+        if (rooms.every((room) => !room.intersects(candidate))) {
+          rooms.push(candidate);
+          exits[dir] = candidate;
+        }
+      }
+    });
+
+    const result = new ReifiedBoard({
+      pos: board.pos,
+      board: new ActiveBoard({
+        ...board.template,
+        textures,
+        scale: 40,
+        app,
+        blurFilter: blur,
+        lightingLayer: lighting,
+        startDir,
+        allDirs: {
+          [Direction.left]: !!exits[Direction.left],
+          [Direction.right]: !!exits[Direction.right],
+          [Direction.up]: !!exits[Direction.up],
+          [Direction.down]: !!exits[Direction.down],
+        }
+      }),
+      level: board.level,
+      type: board.type,
+      startDir,
+      exits,
+    });
+
+    rooms = rooms.filter((x) => x !== board);
+    rooms.push(result);
+
+    return result;
+  }
+
+  const { template, type } = generateTemplate(1, BoardType.GoishiHiroi);
+  const preActiveBoard = new UnreifiedBoard({
+    pos: [0, 0],
+    level: 1,
+    template,
+    type
+  });
+
+  rooms.push(preActiveBoard);
+  let activeBoard: ReifiedBoard = reify(preActiveBoard);
+
+  app.stage.addChild(activeBoard.board.room);
+  app.stage.addChild(lighting);
+  app.stage.addChild(lightingSprite);
+
+  app.stage.addChild(activeBoard.board.textWrapper);
+
+  function isAtDoor(dir: Direction) {
+    if (dir === Direction.up) {
+      return activeBoard.board.pos[0] === Math.floor(activeBoard.board.width / 2) &&
+        activeBoard.board.pos[1] === 0;
+    } else if (dir === Direction.down) {
+      return activeBoard.board.pos[0] === Math.floor(activeBoard.board.width / 2) &&
+        activeBoard.board.pos[1] === activeBoard.board.height - 1;
+    } else if (dir === Direction.right) {
+      return activeBoard.board.pos[1] === Math.floor(activeBoard.board.height / 2) &&
+        activeBoard.board.pos[0] === activeBoard.board.width - 1;
+    } else if (dir === Direction.left) {
+      return activeBoard.board.pos[1] === Math.floor(activeBoard.board.height / 2) &&
+        activeBoard.board.pos[0] === 0;
+    }
+  }
 
   document.body.addEventListener('keydown', (event) => {
     keysdown[event.key] = true;
-    if (activeBoard.finished &&
-      activeBoard.pos[0] === Math.floor(activeBoard.width / 2) &&
-      activeBoard.pos[1] === 0 &&
-      event.key === 'ArrowUp') {
+    const keyMap = {
+      [Direction.up]: 'ArrowUp',
+      [Direction.down]: 'ArrowDown',
+      [Direction.right]: 'ArrowRight',
+      [Direction.left]: 'ArrowLeft',
+    };
 
-      roomSize += 1;
-      app.stage.removeChild(activeBoard.room);
-      app.stage.removeChild(activeBoard.textWrapper);
-      app.stage.removeChild(lightingSprite);
-      activeBoard = generateRandomBoard();
-      app.stage.addChild(lightingSprite);
-      app.stage.addChild(activeBoard.textWrapper);
-    } else {
-      activeBoard.handleKeys(keysdown);
+    const exited = (Object.keys(keyMap) as Direction[]).map((key) => {
+      console.log('testing', key, keyMap[key], event.key, isAtDoor(key), activeBoard.startDir, activeBoard.board.finished, activeBoard.board.pos);
+      if ((activeBoard.startDir === key || activeBoard.board.finished) && isAtDoor(key) && keyMap[key] === event.key) {
+        const exit = activeBoard.exits[key];
+        if (!exit) return false;
+
+        app.stage.removeChild(activeBoard.board.room);
+        app.stage.removeChild(activeBoard.board.textWrapper);
+        app.stage.removeChild(lightingSprite);
+
+        if (exit instanceof UnreifiedBoard) {
+          const newBoard = reify(exit, opposites[key], activeBoard);
+          activeBoard.exits[key] = newBoard;
+          activeBoard = newBoard;
+        }
+        else if (exit instanceof ReifiedBoard) {
+          activeBoard = exit;
+        }
+        app.stage.addChild(activeBoard.board.room);
+        app.stage.addChild(lightingSprite);
+        app.stage.addChild(activeBoard.board.textWrapper);
+
+        return true;
+      }
+    }).some((x) => x);
+
+    if (!exited) {
+      activeBoard.board.handleKeys(keysdown);
     }
   });
   document.body.addEventListener('keyup', (event) => {
     keysdown[event.key] = false;
   });
 
-  app.stage.addChild(lighting);
-  app.stage.addChild(lightingSprite);
-
-  app.stage.addChild(activeBoard.textWrapper);
-
-  lighting.position.x = app.screen.width / 2 - activeBoard.player.x;
-  lighting.position.y = app.screen.height / 2 - activeBoard.player.y;
+  lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x;
+  lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y;
 
   app.ticker.add((delta) => {
-    activeBoard.room.position.x = app.screen.width / 2 - activeBoard.player.x;
-    activeBoard.room.position.y = app.screen.height / 2 - activeBoard.player.y;
+    activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x;
+    activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y;
 
-    lighting.position.x = app.screen.width / 2 - activeBoard.player.x;
-    lighting.position.y = app.screen.height / 2 - activeBoard.player.y;
+    lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x;
+    lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y;
 
-    activeBoard.tick(delta, keysdown);
+    activeBoard.board.tick(delta, keysdown);
   });
 }
 
