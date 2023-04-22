@@ -14,7 +14,9 @@ import TempleGrid, { ReifiedBoard, UnreifiedBoard, BoardType, boardTypes } from 
 async function main() {
   const app = new Application<HTMLCanvasElement>();
 
-  document.body.appendChild(app.view);
+  const wrapper = document.getElementById('wrapper');
+
+  wrapper.appendChild(app.view);
 
   const textures = {
     face: await Assets.load('./assets/face.png'),
@@ -99,10 +101,65 @@ async function main() {
 
   const temple = new TempleGrid(opts);
 
+  const minimap = new Container();
+  const minimapContent = new Container();
+
+  minimap.addChild(minimapContent);
+
+  const minimapMask = new Graphics();
+  minimapMask.beginFill(0xffffff, 1);
+  minimapMask.drawRect(0, 0, app.screen.width, app.screen.height);
+  minimapMask.endFill();
+
+  app.stage.addChild(minimapMask);
+
+  const minimapBackground = new Graphics();
+  minimapBackground.beginFill(0x808080, 0.3);
+  minimapBackground.drawRect(0, 0, app.screen.width, app.screen.height);
+  minimapBackground.endFill();
+
+  const minimapScale = 3;
+
+  const firstRoom = drawGraphic(temple.activeBoard);
+  function drawGraphic(board: ReifiedBoard) {
+    const graphic = new Graphics();
+    graphic.beginFill(0xffffff, 0.5);
+    graphic.drawRect(0, 0, board.dim[0] * minimapScale, board.dim[1] * minimapScale);
+    if (board.exits[Direction.left]) {
+      graphic.drawRect(-minimapScale, Math.floor(board.dim[1] / 2) * minimapScale, minimapScale, minimapScale);
+    }
+    if (board.exits[Direction.right]) {
+      graphic.drawRect(board.dim[0] * minimapScale, Math.floor(board.dim[1] / 2) * minimapScale, minimapScale, minimapScale);
+    }
+    if (board.exits[Direction.up]) {
+      graphic.drawRect(Math.floor(board.dim[0] / 2) * minimapScale, -minimapScale, minimapScale, minimapScale);
+    }
+    if (board.exits[Direction.down]) {
+      graphic.drawRect(Math.floor(board.dim[0] / 2) * minimapScale, board.dim[1] * minimapScale, minimapScale, minimapScale);
+    }
+    graphic.endFill();
+    graphic.position.x = board.pos[0] * minimapScale;
+    graphic.position.y = board.pos[1] * minimapScale;
+    return graphic;
+  }
+  firstRoom.tint = 0xffffff;
+  minimapContent.addChild(firstRoom);
+
+  let currentMinimapSquare = { graphic: firstRoom, finished: false, board: temple.activeBoard };
+
+  const minimapSquares = [currentMinimapSquare];
+
+  minimapContent.position.x = -temple.activeBoard.dim[0] / 2 * minimapScale + app.screen.width / 2;
+  minimapContent.position.y = -temple.activeBoard.dim[0] / 2 * minimapScale + app.screen.height / 2;
+
+  minimap.addChild(minimapBackground);
+  minimap.mask = minimapMask;
+
   app.stage.addChild(temple.activeBoard.board.room);
   app.stage.addChild(lighting);
   app.stage.addChild(lightingSprite);
   app.stage.addChild(temple.activeBoard.board.textWrapper);
+  app.stage.addChild(minimap);
 
   lighting.position.x = app.screen.width / 2 - temple.activeBoard.board.player.x;
   lighting.position.y = app.screen.height / 2 - temple.activeBoard.board.player.y;
@@ -143,24 +200,51 @@ async function main() {
         app.stage.removeChild(activeBoard.board.room);
         app.stage.removeChild(activeBoard.board.textWrapper);
         app.stage.removeChild(lightingSprite);
+        app.stage.removeChild(minimap);
+        
+        const { graphic } = currentMinimapSquare;
+        graphic.tint = activeBoard.board.finished ? 0x00ff00 : 0xff0000;
 
         if (exit instanceof UnreifiedBoard) {
           const newBoard = temple.reify(exit, opposites[key], activeBoard);
           temple.activeBoard.exits[key] = newBoard;
           temple.activeBoard = newBoard;
+
+          const minimapGraphic = drawGraphic(temple.activeBoard);
+          minimapContent.addChild(minimapGraphic);
+
+          currentMinimapSquare = { graphic: minimapGraphic, finished: false, board: temple.activeBoard };
+
+          minimapSquares.push(currentMinimapSquare);
+
+          minimapContent.position.x = -minimapGraphic.position.x + app.screen.width / 2;
+          minimapContent.position.y = -minimapGraphic.position.y + app.screen.height / 2;
         }
         else if (exit instanceof ReifiedBoard) {
           temple.activeBoard = exit;
+          
+          currentMinimapSquare = minimapSquares.find((s) => s.board === exit);
+
+          const { graphic } = currentMinimapSquare;
+
+          graphic.tint = 0xffffff;
+
+          minimapContent.position.x = -graphic.position.x + app.screen.width / 2;
+          minimapContent.position.y = -graphic.position.y + app.screen.height / 2;
         }
         app.stage.addChild(temple.activeBoard.board.room);
         app.stage.addChild(lightingSprite);
         app.stage.addChild(temple.activeBoard.board.textWrapper);
+        app.stage.addChild(minimap);
 
         return true;
       }
     }).some((x) => x);
 
-    if (!exited) {
+    if (event.key === 'm') {
+      minimap.visible = !minimap.visible
+    }
+    else if (!exited) {
       temple.activeBoard.board.handleKeys(keysdown);
     }
   });
@@ -170,6 +254,7 @@ async function main() {
 
   app.ticker.add((delta) => {
     const { activeBoard } = temple;
+
     activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x;
     activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y;
 

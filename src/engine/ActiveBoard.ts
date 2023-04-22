@@ -738,6 +738,8 @@ export default class ActiveBoard {
   }
 
   declareFinished () {
+    if (this.finished) return;
+
     this.finished = true;
     this.active = false;
 

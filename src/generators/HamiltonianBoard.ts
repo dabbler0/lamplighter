@@ -132,7 +132,6 @@ export default class HamiltonianBoard {
       for (let j = 0; j < this.height; j++) {
         const available = Object.values(Direction).map((d) => add(i, j, d))
           .filter(([ci, cj]) => {
-            console.log('test', ci, cj, valid([ci, cj]), this.degree(ci, cj));
             return (
               inBounds([ci, cj]) &&
               this.degree(ci, cj) < (
@@ -146,8 +145,6 @@ export default class HamiltonianBoard {
           .filter(([ci, cj]) => this.hasEdge([i, j], [ci, cj]));
 
         const desiredDegree = pathElements.has(`${i}:${j}`) ? 3 : 2;
-
-        console.log(available, present, desiredDegree);
 
         if (present.length < desiredDegree && available.length >= desiredDegree) {
           const candidates = available.filter(([ci, cj]) => !present.some(([oi, oj]) => oi === ci && oj === cj));

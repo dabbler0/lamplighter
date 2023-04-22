@@ -49,12 +49,9 @@ export default class GoishiHiroiBoard {
       candidates.filter(([mi, mj]) => {
         if ((mi <= ni && mi >= i || mi <= i && mi >= ni) &&
             (mj <= nj && mj >= j || mj <= j && mj >= nj)) {
-          console.log(mi, mj);
           taken.add(`${mi}:${mj}`);
         }
       });
-
-      console.log([ni, nj]);
 
       this.goldPath = new List([ni, nj, direction], this.goldPath);
     }

@@ -164,23 +164,23 @@ export default class TempleGrid {
   placeTemplate (initial: PossibleBoard, dir: Direction, template: BoardTemplate): [number, number] {
     if (dir === Direction.left) {
       return [
-        initial.pos[0] - template.width() - 1,
+        initial.pos[0] - template.width() - 2,
         initial.pos[1] + Math.floor(initial.dim[1] / 2) - Math.floor(template.height() / 2)
       ];
     } else if (dir === Direction.right) {
       return [
-        initial.pos[0] + initial.dim[1] + 1,
+        initial.pos[0] + initial.dim[0] + 2,
         initial.pos[1] + Math.floor(initial.dim[1] / 2) - Math.floor(template.height() / 2)
       ];
     } else if (dir === Direction.up) {
       return [
-        initial.pos[0] + Math.floor(initial.dim[0] / 2) - Math.floor(template.height() / 2),
-        initial.pos[1] - template.height() - 1,
+        initial.pos[0] + Math.floor(initial.dim[0] / 2) - Math.floor(template.width() / 2),
+        initial.pos[1] - template.height() - 2,
       ];
     } else if (dir === Direction.down) {
       return [
-        initial.pos[0] + Math.floor(initial.dim[0] / 2) - Math.floor(template.height() / 2),
-        initial.pos[1] + initial.dim[1] + 1,
+        initial.pos[0] + Math.floor(initial.dim[0] / 2) - Math.floor(template.width() / 2),
+        initial.pos[1] + initial.dim[1] + 2,
       ];
     }
   }
