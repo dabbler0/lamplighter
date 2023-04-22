@@ -18,7 +18,7 @@ export default class GoishiHiroiBoard {
       [0, 0, null],
     );
 
-    const taken = new Set<string>(`0:0`);
+    const taken = new Set<string>([`0:0`]);
 
     for (let i = 0; i < lengthLimit; i++) {
       const [i, j, d] = this.goldPath.head;
