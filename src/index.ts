@@ -1,7 +1,7 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, RenderTexture, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
-import Direction, { opposites } from './util/Direction';
+import Direction, { opposites, add } from './util/Direction';
 import List from './util/List';
 import HamiltonianBoard from './generators/HamiltonianBoard';
 import GoishiHiroiBoard from './generators/GoishiHiroiBoard';
@@ -190,7 +190,22 @@ async function main() {
     }
   }
 
-  document.body.addEventListener('keydown', (event) => {
+  let animationVector: [number, number] | null = null;
+  let animationStart: [number, number] | null = null;
+  let animating = false;
+  let animationCallback: (() => void) | null = null;
+  let animationCounter = 0;
+
+  async function animateActiveBoard(start: [number, number], vector: [number, number]) {
+    animating = true;
+    animationStart = start;
+    animationVector = vector;
+    animationCounter = 0;
+
+    await new Promise<void>((resolve) => animationCallback = () => resolve());
+  }
+
+  document.body.addEventListener('keydown', async (event) => {
     keysdown[event.key] = true;
     const keyMap = {
       [Direction.up]: 'ArrowUp',
@@ -199,11 +214,15 @@ async function main() {
       [Direction.left]: 'ArrowLeft',
     };
 
-    const exited = (Object.keys(keyMap) as Direction[]).map((key) => {
+    if (animating) return;
+
+    const exited = (await Promise.all((Object.keys(keyMap) as Direction[]).map(async (key) => {
       const { activeBoard } = temple;
       if ((activeBoard.startDir === key || activeBoard.board.finished) && isAtDoor(key) && keyMap[key] === event.key) {
         const exit = activeBoard.exits[key];
         if (!exit) return false;
+
+        await animateActiveBoard([0, 0], add(0, 0, opposites[key]));
 
         app.stage.removeChild(activeBoard.board.room);
         app.stage.removeChild(activeBoard.board.textWrapper);
@@ -246,9 +265,11 @@ async function main() {
         app.stage.addChild(temple.activeBoard.board.textWrapper);
         app.stage.addChild(minimap);
 
+        await animateActiveBoard(add(0, 0, key), [0, 0]);
+
         return true;
       }
-    }).some((x) => x);
+    }))).some((x) => x);
 
     if (event.key === 'm') {
       minimap.visible = !minimap.visible
@@ -264,11 +285,34 @@ async function main() {
   app.ticker.add((delta) => {
     const { activeBoard } = temple;
 
-    activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x;
-    activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y;
+    if (animating) {
+      activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x
+        + animationStart[0] * (1 - animationCounter) * app.screen.width
+        + animationVector[0] * animationCounter * app.screen.width;
+      activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y
+        + animationStart[1] * (1 - animationCounter) * app.screen.height
+        + animationVector[1] * animationCounter * app.screen.height;
 
-    lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x;
-    lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y;
+      lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x
+        + animationStart[0] * (1 - animationCounter) * app.screen.width
+        + animationVector[0] * animationCounter * app.screen.width;
+      lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y
+        + animationStart[1] * (1 - animationCounter) * app.screen.height
+        + animationVector[1] * animationCounter * app.screen.height;
+
+      animationCounter += delta * 0.1;
+
+      if (animationCounter > 1) {
+        animating = false;
+        if (animationCallback) animationCallback();
+      }
+    } else {
+      activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x;
+      activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y;
+
+      lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x;
+      lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y;
+    }
 
     activeBoard.board.tick(delta, keysdown);
   });
