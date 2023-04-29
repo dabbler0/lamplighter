@@ -7,7 +7,15 @@ import HamiltonianBoard from '../generators/HamiltonianBoard';
 import GoishiHiroiBoard from '../generators/GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from '../generators/KnightGraph';
 import AltarBoard from '../generators/AltarBoard';
-import BoardTemplate, { Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob } from './BoardTemplate';
+import BoardTemplate, { Terrain, Mob, KnightMob, LockerMob, ChestMob, LevelOptions, AltarMob, PileMob } from './BoardTemplate';
+
+export class PlayerState {
+  keys: Set<string>;
+
+  constructor () {
+    this.keys = new Set();
+  }
+}
 
 function nextColor(c: KnightColor) {
   if (c === KnightColor.red) {
@@ -280,6 +288,46 @@ export default class ActiveBoard {
         });
       }
 
+      if (mob instanceof ChestMob) {
+        const sprite = new Sprite(
+          textures.chestClosed
+        );
+
+        sprite.scale.x = this.scale / 200;
+        sprite.scale.y = this.scale / 200;
+
+        sprite.anchor.y = 0.3;
+
+        sprite.position.x = mob.pos[0] * scale;
+        sprite.position.y = mob.pos[1] * scale;
+
+        this.room.addChild(sprite);
+        this.addBulb(sprite);
+        this.mobs.push({
+          mob, sprite
+        });
+      }
+
+      if (mob instanceof LockerMob) {
+        const sprite = new Sprite(
+          textures.blueKnight
+        );
+
+        sprite.scale.x = this.scale / 200;
+        sprite.scale.y = this.scale / 200;
+
+        sprite.anchor.y = 0.3;
+
+        sprite.position.x = mob.pos[0] * scale;
+        sprite.position.y = mob.pos[1] * scale;
+
+        this.room.addChild(sprite);
+        this.addBulb(sprite);
+        this.mobs.push({
+          mob, sprite
+        });
+      }
+
       if (mob instanceof PileMob) {
         const sprite = new Sprite(
           getOrbTexture(mob.size, this.textures, this.app)
@@ -382,6 +430,8 @@ export default class ActiveBoard {
     const background = new Sprite(this.app.renderer.generateTexture(textWrapperTexture));
     this.textWrapper.addChild(background);
     this.textWrapper.addChild(this.text); 
+
+    if (this.opts.autoFinish) this.declareFinished();
   }
 
   isPassable (i: number, j: number) {
@@ -582,7 +632,7 @@ export default class ActiveBoard {
     return moved;
   }
 
-  async handleKeys (keysdown: Record<string, boolean>) {
+  async handleKeys (keysdown: Record<string, boolean>, playerState: PlayerState) {
     if (this.displayingText) {
       this.removeText();
       return;
@@ -590,10 +640,6 @@ export default class ActiveBoard {
     if (this.pendingAnimations) return;
 
     const [i, j] = this.pos;
-    if (this.opts.hRoot && i === this.opts.hRoot[0] && j === this.opts.hRoot[1] && !this.finished) {
-      this.active = true;
-    }
-
     let moved = false;
 
     // Movement
@@ -629,6 +675,28 @@ export default class ActiveBoard {
             if (knights.every(({ mob }) => mob.guessedColor === mob.trueColor)) this.declareFinished();
           } else if (interacted.mob instanceof PileMob) {
             this.pullingMob = interacted;
+          } else if (interacted.mob instanceof ChestMob && this.opts.keyProvided) {
+            this.displayText([
+              `Received the Key of ${this.opts.keyProvided}.`
+            ]);
+            playerState.keys.add(this.opts.keyProvided);
+            interacted.sprite.texture = this.textures.chestOpen;
+          } else if (interacted.mob instanceof LockerMob && this.opts.lockRequired) {
+            if (this.finished) {
+              this.displayText([
+                `Thank you.`
+              ]);
+            } else if (playerState.keys.has(this.opts.lockRequired)) {
+              this.displayText([
+                `Thank you.`
+              ]);
+              playerState.keys.delete(this.opts.lockRequired);
+              this.declareFinished();
+            } else {
+              this.displayText([
+                `Bring me the Key of ${this.opts.lockRequired}.`
+              ]);
+            }
           }
         }
       }
@@ -642,12 +710,48 @@ export default class ActiveBoard {
             `I am ${mob.name}${mob.revealColor ? ` the ${mob.trueColor[0].toUpperCase() + mob.trueColor.substring(1)}` : ''}.`,
             ...mob.declarations
           ]);
+        } else if (interacted.mob instanceof LockerMob && this.opts.lockRequired) {
+          if (this.finished) {
+            this.displayText([
+              `Thank you.`
+            ]);
+          } else {
+            this.displayText([
+              `Bring me the Key of ${this.opts.lockRequired}.`
+            ]);
+          }
+        }
+      }
+    } else if (keysdown['i']) {
+      this.displayText([
+        "You are carrying:",
+        ...Array.from(playerState.keys).map((key) => `The Key of ${key}`)
+      ]);
+    }
+
+    // Hamiltonian path puzzle
+    if (moved && this.opts.hRoot && this.pos[0] === this.opts.hRoot[0] && this.pos[1] === this.opts.hRoot[1] && !this.finished) {
+      this.active = true;
+
+      // Finished?
+      if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unlitTorch))) {
+        this.declareFinished();
+      } else {
+        this.pathSprites.forEach((sprite) => this.room.removeChild(sprite));
+        this.pathSprites = [];
+
+        for (let oi = 0; oi < this.width; oi++) {
+          for (let oj = 0; oj < this.height; oj++) {
+            if (this.terrain[oi][oj] === Terrain.litTorch && !(oi === this.opts.hRoot[0] && oj === this.opts.hRoot[1])) {
+              this.unlightTorch(oi, oj);
+            }
+          }
         }
       }
     }
 
     // Hamiltonian path puzzle
-    if (
+    else if (
         this.opts.hRoot &&
         moved &&
         this.terrain[this.pos[0]][this.pos[1]] === Terrain.litTorch &&
@@ -694,14 +798,10 @@ export default class ActiveBoard {
       }
     }
 
-    // Hamiltonian path puzzle
-    if (this.opts.hRoot && this.terrain[this.pos[0]][this.pos[1]] === Terrain.unlitTorch && this.active) {
-      this.lightTorch(this.pos[0], this.pos[1]);
 
-      // Finished?
-      if (this.terrain.every((col) => col.every((cell) => cell !== Terrain.unlitTorch))) {
-        this.declareFinished();
-      }
+    // Hamiltonian path puzzle
+    if (moved && this.opts.hRoot && this.terrain[this.pos[0]][this.pos[1]] === Terrain.unlitTorch && this.active) {
+      this.lightTorch(this.pos[0], this.pos[1]);
     }
 
     this.player.position.x = this.pos[0] * this.scale;
@@ -787,7 +887,7 @@ export default class ActiveBoard {
         if (this.animationParticleEffect) {
           this.addParticle(
             start[0] + vector[0] * resultPosition + this.scale / 2,
-            start[1] + vector[1] * resultPosition + this.scale,
+            start[1] + vector[1] * resultPosition + this.scale * 0.7,
           )
         }
         sprite.position.x = start[0] + vector[0] * resultPosition;

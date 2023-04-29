@@ -8,8 +8,8 @@ import GoishiHiroiBoard from './generators/GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from './generators/KnightGraph';
 import AltarBoard from './generators/AltarBoard';
 import BoardTemplate, { Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob } from './engine/BoardTemplate';
-import ActiveBoard from './engine/ActiveBoard';
-import TempleGrid, { ReifiedBoard, UnreifiedBoard, BoardType, boardTypes } from './engine/TempleGrid';
+import ActiveBoard, { PlayerState } from './engine/ActiveBoard';
+import TempleGrid, { PossibleBoard, BoardType, boardTypes } from './engine/TempleGrid';
 
 async function main() {
   const app = new Application<HTMLCanvasElement>();
@@ -19,6 +19,8 @@ async function main() {
   wrapper.appendChild(app.view);
 
   const textures = {
+    chestClosed: await Assets.load('./assets/chest-closed.png'),
+    chestOpen: await Assets.load('./assets/chest-open.png'),
     face: await Assets.load('./assets/face.png'),
     back: await Assets.load('./assets/back.png'),
     right1: await Assets.load('./assets/side.png'),
@@ -100,9 +102,15 @@ async function main() {
   };
 
   const temple = new TempleGrid(opts);
+  temple.generateFinite(35);
+
+  temple.reify(temple.activeBoard);
+
+  const playerState = new PlayerState();
 
   const minimap = new Container();
   const minimapContent = new Container();
+  minimap.visible = false;
 
   minimap.addChild(minimapContent);
 
@@ -121,7 +129,7 @@ async function main() {
   const minimapScale = 3;
 
   const firstRoom = drawGraphic(temple.activeBoard);
-  function drawGraphic(board: ReifiedBoard) {
+  function drawGraphic(board: PossibleBoard) {
     const graphic = new Graphics();
     graphic.beginFill(0xffffff, 0.5);
     graphic.drawRect(0, 0, board.dim[0] * minimapScale, board.dim[1] * minimapScale);
@@ -204,12 +212,17 @@ async function main() {
         
         const { graphic } = currentMinimapSquare;
         graphic.tint = activeBoard.board.finished ? 0x00ff00 : 0xff0000;
+        temple.activeBoard = exit;
 
-        if (exit instanceof UnreifiedBoard) {
-          const newBoard = temple.reify(exit, opposites[key], activeBoard);
-          temple.activeBoard.exits[key] = newBoard;
-          temple.activeBoard = newBoard;
+        if (!exit.board) {
+          temple.reify(exit);
+        }
 
+        if (!exit.board) throw new Error('type narrowing');
+          
+        currentMinimapSquare = minimapSquares.find((s) => s.board === exit);
+
+        if (!currentMinimapSquare) {
           const minimapGraphic = drawGraphic(temple.activeBoard);
           minimapContent.addChild(minimapGraphic);
 
@@ -220,18 +233,14 @@ async function main() {
           minimapContent.position.x = -minimapGraphic.position.x + app.screen.width / 2;
           minimapContent.position.y = -minimapGraphic.position.y + app.screen.height / 2;
         }
-        else if (exit instanceof ReifiedBoard) {
-          temple.activeBoard = exit;
-          
-          currentMinimapSquare = minimapSquares.find((s) => s.board === exit);
 
-          const { graphic } = currentMinimapSquare;
+        const { graphic: newGraphic } = currentMinimapSquare;
 
-          graphic.tint = 0xffffff;
+        newGraphic.tint = 0xffffff;
 
-          minimapContent.position.x = -graphic.position.x + app.screen.width / 2;
-          minimapContent.position.y = -graphic.position.y + app.screen.height / 2;
-        }
+        minimapContent.position.x = -newGraphic.position.x + app.screen.width / 2;
+        minimapContent.position.y = -newGraphic.position.y + app.screen.height / 2;
+
         app.stage.addChild(temple.activeBoard.board.room);
         app.stage.addChild(lightingSprite);
         app.stage.addChild(temple.activeBoard.board.textWrapper);
@@ -245,7 +254,7 @@ async function main() {
       minimap.visible = !minimap.visible
     }
     else if (!exited) {
-      temple.activeBoard.board.handleKeys(keysdown);
+      temple.activeBoard.board.handleKeys(keysdown, playerState);
     }
   });
   document.body.addEventListener('keyup', (event) => {

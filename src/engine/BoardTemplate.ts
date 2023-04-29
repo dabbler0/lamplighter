@@ -20,9 +20,36 @@ export type LevelOptions = {
   hRoot?: [number, number]
   altarTarget?: number;
   goishiHiroi?: boolean;
+  keyProvided?: string;
+  autoFinish?: boolean;
+  lockRequired?: string;
 };
 export interface Mob {
   pos: [number, number];
+}
+
+export class ChestMob implements Mob {
+  pos: [number, number];
+  open: boolean;
+
+  constructor({
+    pos
+  }: { pos: [number, number] }) {
+    this.pos = pos;
+    this.open = false;
+  }
+}
+
+export class LockerMob implements Mob {
+  pos: [number, number];
+  open: boolean;
+
+  constructor({
+    pos
+  }: { pos: [number, number] }) {
+    this.pos = pos;
+    this.open = false;
+  }
 }
 
 export class PileMob implements Mob {
@@ -288,8 +315,6 @@ export default class BoardTemplate {
       }
     }
 
-    terrain[width + 1][height * 2 + 1] = Terrain.litTorch;
-
     Array.from(hamiltonianBoard.edges).forEach((edge) => {
       const [
         [i1, j1],
@@ -311,10 +336,88 @@ export default class BoardTemplate {
 
     terrain[width + 1][1] = Terrain.path;
 
+    terrain[Math.floor(width / 2) * 2 + 2][height * 2] = Terrain.litTorch;
+    terrain[width + 1][height * 2 + 1] = Terrain.path;
+
     return new this({
       terrain,
       mobs: [],
-      opts: { hRoot: [ width + 1, height * 2 + 1 ] },
+      opts: { hRoot: [ Math.floor(width / 2) * 2 + 2, height * 2 ] },
+    });
+  }
+
+  static generateKey (name: string) {
+    const { terrain } = BoardTemplate.generateEmpty(7, 7);
+
+    const mobs: Mob[] = [];
+
+    mobs.push(new ChestMob({
+      pos: [3, 3]
+    }));
+
+    return new this({
+      terrain,
+      mobs,
+      opts: {
+        keyProvided: name,
+        autoFinish: true,
+      },
+    });
+  }
+
+  static generateLock (name: string) {
+    const { terrain } = BoardTemplate.generateEmpty(7, 7);
+
+    const mobs: Mob[] = [];
+
+    mobs.push(new LockerMob({
+      pos: [3, 3]
+    }));
+
+    return new this({
+      terrain,
+      mobs,
+      opts: {
+        lockRequired: name,
+      },
+    });
+  }
+
+  static generateEmpty (w: number, h: number) {
+    const terrain: Terrain[][] = [];
+
+    for (let i = 0; i < w; i++) {
+      terrain[i] = [];
+      for (let j = 0; j < h; j++) {
+        terrain[i][j] = Terrain.water;
+      }
+    }
+
+    for (let i = 2; i < w - 2; i++) {
+      for (let j = 2; j < h - 2; j++) {
+        terrain[i][j] = Terrain.path;
+      }
+    }
+
+    for (let i = 0; i < w; i++) {
+      terrain[i][0] = Terrain.path;
+      terrain[i][h - 1] = Terrain.path;
+    }
+
+    for (let j = 0; j < h; j++) {
+      terrain[0][j] = Terrain.path;
+      terrain[w - 1][j] = Terrain.path;
+    }
+
+    terrain[1][Math.floor(h / 2)] = Terrain.path;
+    terrain[w - 2][Math.floor(h / 2)] = Terrain.path;
+    terrain[Math.floor(w / 2)][1] = Terrain.path;
+    terrain[Math.floor(w / 2)][h - 2] = Terrain.path;
+
+    return new this({
+      terrain,
+      mobs: [],
+      opts: { autoFinish: true },
     });
   }
 
