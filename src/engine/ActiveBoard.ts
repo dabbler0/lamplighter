@@ -94,6 +94,9 @@ function terrainToTexture(here: Terrain, above: Terrain, textures: Record<string
   if (here === Terrain.purple) {
     return textures.stonePurple;
   }
+  if (here === Terrain.grass) {
+    return textures.grass;
+  }
   if (above === Terrain.water) {
     if (here === Terrain.unlitTorch) {
       return textures.lightTop;

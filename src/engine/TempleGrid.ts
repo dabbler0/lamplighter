@@ -42,6 +42,7 @@ export enum BoardType {
   Hamiltonian = 'Hamiltonian',
   Altar = 'Altar',
   KeyOrLock = 'KeyOrLock',
+  Rest = 'Rest'
 }
 
 export const boardTypes = [
@@ -49,6 +50,7 @@ export const boardTypes = [
   BoardType.Hamiltonian,
   BoardType.Altar,
   BoardType.KeyOrLock,
+  BoardType.Rest,
 ]
 
 export class PossibleBoard {
@@ -92,10 +94,10 @@ export default class TempleGrid {
     lightingLayer: Layer;
   }) {
     this.unusedKeys = new Set();
-    const { template, type } = this.generateTemplate(1, BoardType.GoishiHiroi);
+    const { template, type } = this.generateTemplate(5, BoardType.GoishiHiroi);
     this.activeBoard = new PossibleBoard(
       [0, 0],
-      1,
+      5,
       type,
       template,
     );
@@ -171,9 +173,9 @@ export default class TempleGrid {
 
   generateGoishiHiroi (roomLevel: number): { template: BoardTemplate, placeCallback?: () => void} {
     const newBoard = new GoishiHiroiBoard(
-      Math.floor(Math.sqrt(5 * roomLevel + 5)),
-      Math.floor(Math.sqrt(5 * roomLevel + 5)),
-      roomLevel,
+      2 * Math.ceil(Math.sqrt(5 * roomLevel + 5) / 2) + 1,
+      2 * Math.ceil(Math.sqrt(5 * roomLevel + 5) / 2) + 1,
+      roomLevel * 3,
     );
     return { template: BoardTemplate.fromGoishiHiroi(newBoard) };
   }
@@ -189,6 +191,12 @@ export default class TempleGrid {
     return {
       template: BoardTemplate.generateEmpty(w, h)
     }
+  }
+
+  generateRest (w: number, h: number): { template: BoardTemplate, placeCallback?: () => void} {
+    return {
+      template: BoardTemplate.generateRest(w, h)
+    };
   }
 
   generateKeyOrLock (): { template: BoardTemplate, placeCallback: () => void} {
@@ -216,6 +224,10 @@ export default class TempleGrid {
       selection === BoardType.GoishiHiroi ? this.generateGoishiHiroi(level) :
       selection === BoardType.Hamiltonian ? this.generateHamiltonian(level) :
       selection === BoardType.Altar ? this.generateAltar(level) :
+      selection === BoardType.Rest ? this.generateRest(
+        Math.ceil(Math.random() * 5),
+        Math.ceil(Math.random() * 3),
+      ) :
       this.generateKeyOrLock();
 
     return { template, type: selection, placeCallback };

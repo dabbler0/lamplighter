@@ -22,6 +22,7 @@ async function main() {
     chestClosed: await Assets.load('./assets/chest-closed.png'),
     chestOpen: await Assets.load('./assets/chest-open.png'),
     face: await Assets.load('./assets/face.png'),
+    grass: await Assets.load('./assets/grass.png'),
     back: await Assets.load('./assets/back.png'),
     right1: await Assets.load('./assets/side.png'),
     left1: (await Assets.load('./assets/side.png')).clone(),

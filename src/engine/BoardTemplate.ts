@@ -14,6 +14,7 @@ export enum Terrain {
   unusedIceRune = 'unusedIceRune',
   usedIceRune = 'usedIceRune',
   purple = 'purple',
+  grass = 'grass',
 }
 
 export type LevelOptions = {
@@ -259,25 +260,18 @@ export default class BoardTemplate {
   }
 
   static fromGoishiHiroi(board: GoishiHiroiBoard) {
-    const terrain: Terrain[][] = [];
     const { width, height } = board;
-
-    for (let i = 0; i < width + 2; i++) {
-      terrain[i] = [];
-      for (let j = 0; j < height + 2; j++) {
-        terrain[i][j] = Terrain.path;
-      }
-    }
+    const { terrain } = BoardTemplate.generateEmpty(width + 6, height + 6);
 
     for (let i = 0; i < width; i++) {
       for (let j = 0; j < height; j++) {
-        terrain[i + 1][j + 1] = Terrain.ice;
+        terrain[i + 3][j + 3] = Terrain.ice;
       }
     }
 
     for (let cursor = board.goldPath; !!cursor; cursor = cursor.prev) {
       const [i, j] = cursor.head;
-      terrain[i + 1][j + 1] = Terrain.unusedIceRune;
+      terrain[i + 3][j + 3] = Terrain.unusedIceRune;
     }
 
     return new this({
@@ -417,6 +411,78 @@ export default class BoardTemplate {
     return new this({
       terrain,
       mobs: [],
+      opts: { autoFinish: true },
+    });
+  }
+
+  static generateRest (w: number, h: number) {
+    const terrain: Terrain[][] = [];
+    const mobs: Mob[] = [];
+
+    const width = 2 * Math.ceil((w * 6 + 2) / 2) + 1;
+    const height = 2 * Math.ceil((h * 7 + 2) / 2) + 1;
+
+    for (let i = 0; i < width; i++) {
+      terrain[i] = [];
+      for (let j = 0; j < height; j++) {
+        terrain[i][j] = Terrain.grass;
+      }
+    }
+
+    for (let i = 0; i < width; i++) {
+      terrain[i][0] = Terrain.path;
+      terrain[i][height - 1] = Terrain.path;
+    }
+
+    for (let j = 0; j < height; j++) {
+      terrain[0][j] = Terrain.path;
+      terrain[width - 1][j] = Terrain.path;
+    }
+
+    for (let i = 0; i < w; i++) {
+      for (let j = 0; j < h; j++) {
+        for (let k = 0; k < 5; k++) {
+          for (let m = 0; m < 4; m++) {
+            terrain[i * 6 + 2 + m][j * 7 + 2 + k] = Terrain.path;
+          }
+        }
+
+        if ((w >= 4 && (i === 0 || i === w - 1) ||
+           h >= 3 && (j === 0 || j === h - 1))) {
+          mobs.push(new AltarMob({
+            pos: [
+              i * 6 + 3,
+              j * 7 + 3,
+            ]
+          }));
+          mobs.push(new AltarMob({
+            pos: [
+              i * 6 + 4,
+              j * 7 + 5,
+            ]
+          }));
+          for (let k = 0; k < 3; k++) {
+            for (let m = 0; m < 2; m++) {
+              terrain[i * 6 + 3 + m][j * 7 + 3 + k] = Terrain.purple;
+            }
+          }
+        } else {
+          for (let k = 0; k < 3; k++) {
+            for (let m = 0; m < 2; m++) {
+              terrain[i * 6 + 3 + m][j * 7 + 3 + k] = Terrain.water;
+            }
+          }
+        }
+        terrain[i * 6 + 2][j * 7 + 2] = Terrain.litTorch;
+        terrain[i * 6 + 5][j * 7 + 2] = Terrain.litTorch;
+        terrain[i * 6 + 2][j * 7 + 6] = Terrain.litTorch;
+        terrain[i * 6 + 5][j * 7 + 6] = Terrain.litTorch;
+      }
+    }
+
+    return new this({
+      terrain,
+      mobs,
       opts: { autoFinish: true },
     });
   }
