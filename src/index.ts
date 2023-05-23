@@ -7,9 +7,11 @@ import HamiltonianBoard from './generators/HamiltonianBoard';
 import GoishiHiroiBoard from './generators/GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from './generators/KnightGraph';
 import AltarBoard from './generators/AltarBoard';
-import BoardTemplate, { Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob } from './engine/BoardTemplate';
-import ActiveBoard, { PlayerState } from './engine/ActiveBoard';
-import TempleGrid, { PossibleBoard, BoardType, boardTypes } from './engine/TempleGrid';
+import BoardTemplate, { Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob, BoardType, boardTypes } from './engine/BoardTemplate';
+import TempleGrid from './engine/TempleGrid';
+import RenderContext from './engine/RenderContext';
+import PossibleBoard from './engine/PossibleBoard';
+import PlayerState from './engine/PlayerState';
 
 async function main() {
   const app = new Application<HTMLCanvasElement>();
@@ -68,6 +70,9 @@ async function main() {
 
   app.stage = new Stage();
 
+  const rootContainer = new Container();
+  app.stage.addChild(rootContainer);
+
   const lighting = new Layer();
   const blur = new BlurFilter(20);
   const smallBlur = new BlurFilter();
@@ -94,117 +99,32 @@ async function main() {
 
   const keysdown: Record<string, boolean> = {};
 
-  const opts = {
+  const player = new Sprite(textures.face);
+  player.scale.x = 40 / 200;
+  player.scale.y = 40 / 200;
+  player.zIndex = 0;
+  rootContainer.addChild(player);
+
+  const temple = new TempleGrid(new RenderContext({
     textures,
     scale: 40,
-    app,
-    blurFilter: blur,
+    stage: app.stage as Stage,
+    blur,
+    player,
+    rootContainer,
     lightingLayer: lighting,
-  };
-
-  const temple = new TempleGrid(opts);
+  }));
   temple.generateFinite(35);
-
-  temple.reify(temple.activeBoard);
 
   const playerState = new PlayerState();
 
-  const minimap = new Container();
-  const minimapContent = new Container();
-  minimap.visible = false;
-
-  minimap.addChild(minimapContent);
-
-  const minimapMask = new Graphics();
-  minimapMask.beginFill(0xffffff, 1);
-  minimapMask.drawRect(0, 0, app.screen.width, app.screen.height);
-  minimapMask.endFill();
-
-  app.stage.addChild(minimapMask);
-
-  const minimapBackground = new Graphics();
-  minimapBackground.beginFill(0x808080, 0.3);
-  minimapBackground.drawRect(0, 0, app.screen.width, app.screen.height);
-  minimapBackground.endFill();
-
-  const minimapScale = 3;
-
-  const firstRoom = drawGraphic(temple.activeBoard);
-  function drawGraphic(board: PossibleBoard) {
-    const graphic = new Graphics();
-    graphic.beginFill(0xffffff, 0.5);
-    graphic.drawRect(0, 0, board.dim[0] * minimapScale, board.dim[1] * minimapScale);
-    if (board.exits[Direction.left]) {
-      graphic.drawRect(-minimapScale, Math.floor(board.dim[1] / 2) * minimapScale, minimapScale, minimapScale);
-    }
-    if (board.exits[Direction.right]) {
-      graphic.drawRect(board.dim[0] * minimapScale, Math.floor(board.dim[1] / 2) * minimapScale, minimapScale, minimapScale);
-    }
-    if (board.exits[Direction.up]) {
-      graphic.drawRect(Math.floor(board.dim[0] / 2) * minimapScale, -minimapScale, minimapScale, minimapScale);
-    }
-    if (board.exits[Direction.down]) {
-      graphic.drawRect(Math.floor(board.dim[0] / 2) * minimapScale, board.dim[1] * minimapScale, minimapScale, minimapScale);
-    }
-    graphic.endFill();
-    graphic.position.x = board.pos[0] * minimapScale;
-    graphic.position.y = board.pos[1] * minimapScale;
-    return graphic;
-  }
-  firstRoom.tint = 0xffffff;
-  minimapContent.addChild(firstRoom);
-
-  let currentMinimapSquare = { graphic: firstRoom, finished: false, board: temple.activeBoard };
-
-  const minimapSquares = [currentMinimapSquare];
-
-  minimapContent.position.x = -temple.activeBoard.dim[0] / 2 * minimapScale + app.screen.width / 2;
-  minimapContent.position.y = -temple.activeBoard.dim[0] / 2 * minimapScale + app.screen.height / 2;
-
-  minimap.addChild(minimapBackground);
-  minimap.mask = minimapMask;
-
-  app.stage.addChild(temple.activeBoard.board.room);
   app.stage.addChild(lighting);
   app.stage.addChild(lightingSprite);
-  app.stage.addChild(temple.activeBoard.board.textWrapper);
-  app.stage.addChild(minimap);
 
-  lighting.position.x = app.screen.width / 2 - temple.activeBoard.board.player.x;
-  lighting.position.y = app.screen.height / 2 - temple.activeBoard.board.player.y;
+  lighting.position.x = app.screen.width / 2 - player.position.x;
+  lighting.position.y = app.screen.height / 2 - player.position.y;
 
-  function isAtDoor(dir: Direction) {
-    const { activeBoard } = temple;
-
-    if (dir === Direction.up) {
-      return activeBoard.board.pos[0] === Math.floor(activeBoard.board.width / 2) &&
-        activeBoard.board.pos[1] === 0;
-    } else if (dir === Direction.down) {
-      return activeBoard.board.pos[0] === Math.floor(activeBoard.board.width / 2) &&
-        activeBoard.board.pos[1] === activeBoard.board.height - 1;
-    } else if (dir === Direction.right) {
-      return activeBoard.board.pos[1] === Math.floor(activeBoard.board.height / 2) &&
-        activeBoard.board.pos[0] === activeBoard.board.width - 1;
-    } else if (dir === Direction.left) {
-      return activeBoard.board.pos[1] === Math.floor(activeBoard.board.height / 2) &&
-        activeBoard.board.pos[0] === 0;
-    }
-  }
-
-  let animationVector: [number, number] | null = null;
-  let animationStart: [number, number] | null = null;
-  let animating = false;
-  let animationCallback: (() => void) | null = null;
-  let animationCounter = 0;
-
-  async function animateActiveBoard(start: [number, number], vector: [number, number]) {
-    animating = true;
-    animationStart = start;
-    animationVector = vector;
-    animationCounter = 0;
-
-    await new Promise<void>((resolve) => animationCallback = () => resolve());
-  }
+  let alreadyMoving = false;
 
   document.body.addEventListener('keydown', async (event) => {
     keysdown[event.key] = true;
@@ -215,107 +135,30 @@ async function main() {
       [Direction.left]: 'ArrowLeft',
     };
 
-    if (animating) return;
+    Object.values(Direction).forEach(async (dir) => {
+      if (event.key === keyMap[dir] && !alreadyMoving) {
+        alreadyMoving = true;
+        await temple.applyMove(playerState, dir);
 
-    const exited = (await Promise.all((Object.keys(keyMap) as Direction[]).map(async (key) => {
-      const { activeBoard } = temple;
-      if ((activeBoard.startDir === key || activeBoard.board.finished) && isAtDoor(key) && keyMap[key] === event.key) {
-        const exit = activeBoard.exits[key];
-        if (!exit) return false;
-
-        await animateActiveBoard([0, 0], add(0, 0, opposites[key]));
-
-        app.stage.removeChild(activeBoard.board.room);
-        app.stage.removeChild(activeBoard.board.textWrapper);
-        app.stage.removeChild(lightingSprite);
-        app.stage.removeChild(minimap);
-        
-        const { graphic } = currentMinimapSquare;
-        graphic.tint = activeBoard.board.finished ? 0x00ff00 : 0xff0000;
-        temple.activeBoard = exit;
-
-        if (!exit.board) {
-          temple.reify(exit);
-        }
-
-        if (!exit.board) throw new Error('type narrowing');
-          
-        currentMinimapSquare = minimapSquares.find((s) => s.board === exit);
-
-        if (!currentMinimapSquare) {
-          const minimapGraphic = drawGraphic(temple.activeBoard);
-          minimapContent.addChild(minimapGraphic);
-
-          currentMinimapSquare = { graphic: minimapGraphic, finished: false, board: temple.activeBoard };
-
-          minimapSquares.push(currentMinimapSquare);
-
-          minimapContent.position.x = -minimapGraphic.position.x + app.screen.width / 2;
-          minimapContent.position.y = -minimapGraphic.position.y + app.screen.height / 2;
-        }
-
-        const { graphic: newGraphic } = currentMinimapSquare;
-
-        newGraphic.tint = 0xffffff;
-
-        minimapContent.position.x = -newGraphic.position.x + app.screen.width / 2;
-        minimapContent.position.y = -newGraphic.position.y + app.screen.height / 2;
-
-        app.stage.addChild(temple.activeBoard.board.room);
-        app.stage.addChild(lightingSprite);
-        app.stage.addChild(temple.activeBoard.board.textWrapper);
-        app.stage.addChild(minimap);
-
-        await animateActiveBoard(add(0, 0, key), [0, 0]);
-
-        return true;
+        player.position.x = playerState.pos[0] * 40;
+        player.position.y = playerState.pos[1] * 40;
+        player.zIndex = playerState.pos[1] + 1;
+        alreadyMoving = false;
       }
-    }))).some((x) => x);
-
-    if (event.key === 'm') {
-      minimap.visible = !minimap.visible
-    }
-    else if (!exited) {
-      temple.activeBoard.board.handleKeys(keysdown, playerState);
-    }
+    });
   });
   document.body.addEventListener('keyup', (event) => {
     keysdown[event.key] = false;
   });
 
   app.ticker.add((delta) => {
-    const { activeBoard } = temple;
+    temple.tick(delta);
 
-    if (animating) {
-      activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x
-        + animationStart[0] * (1 - animationCounter) * app.screen.width
-        + animationVector[0] * animationCounter * app.screen.width;
-      activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y
-        + animationStart[1] * (1 - animationCounter) * app.screen.height
-        + animationVector[1] * animationCounter * app.screen.height;
+    rootContainer.position.x = app.screen.width / 2 - player.position.x;
+    rootContainer.position.y = app.screen.height / 2 - player.position.y;
 
-      lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x
-        + animationStart[0] * (1 - animationCounter) * app.screen.width
-        + animationVector[0] * animationCounter * app.screen.width;
-      lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y
-        + animationStart[1] * (1 - animationCounter) * app.screen.height
-        + animationVector[1] * animationCounter * app.screen.height;
-
-      animationCounter += delta * 0.1;
-
-      if (animationCounter > 1) {
-        animating = false;
-        if (animationCallback) animationCallback();
-      }
-    } else {
-      activeBoard.board.room.position.x = app.screen.width / 2 - activeBoard.board.player.x;
-      activeBoard.board.room.position.y = app.screen.height / 2 - activeBoard.board.player.y;
-
-      lighting.position.x = app.screen.width / 2 - activeBoard.board.player.x;
-      lighting.position.y = app.screen.height / 2 - activeBoard.board.player.y;
-    }
-
-    activeBoard.board.tick(delta, keysdown);
+    lighting.position.x = app.screen.width / 2 - player.position.x;
+    lighting.position.y = app.screen.height / 2 - player.position.y;
   });
 }
 

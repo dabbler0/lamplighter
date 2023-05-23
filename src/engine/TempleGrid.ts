@@ -1,14 +1,18 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, RenderTexture, groupD8 } from 'pixi.js';
 import { Layer, Stage } from '@pixi/layers';
-import Direction, { opposites } from '../util/Direction';
+import Direction, { add, opposites } from '../util/Direction';
 import List from '../util/List';
 import HamiltonianBoard from '../generators/HamiltonianBoard';
 import GoishiHiroiBoard from '../generators/GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from '../generators/KnightGraph';
 import AltarBoard from '../generators/AltarBoard';
-import BoardTemplate, { Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob } from './BoardTemplate';
-import ActiveBoard from './ActiveBoard';
+import BoardTemplate, { BoardType, boardTypes, Terrain, Mob, KnightMob, LevelOptions, AltarMob, PileMob } from './BoardTemplate';
+import RoomManager from './RoomManager';
 import { nameByRace, RaceType } from 'fantasy-name-generator';
+import Tile from './Tile';
+import RenderContext from './RenderContext';
+import PossibleBoard from './PossibleBoard';
+import PlayerState from './PlayerState';
 
 const namesets: RaceType[] = [
   "cavePerson",
@@ -37,72 +41,23 @@ function randomName() {
     { gender: Math.random() < 0.5 ? 'male' : 'female', allowMultipleNames: true }) as string;
 }
 
-export enum BoardType {
-  GoishiHiroi = 'GoishiHiroi',
-  Hamiltonian = 'Hamiltonian',
-  Altar = 'Altar',
-  KeyOrLock = 'KeyOrLock',
-  Rest = 'Rest'
-}
-
-export const boardTypes = [
-  BoardType.GoishiHiroi,
-  BoardType.Hamiltonian,
-  BoardType.Altar,
-  BoardType.KeyOrLock,
-  BoardType.Rest,
-]
-
-export class PossibleBoard {
-  dim: [number, number];
-  board?: ActiveBoard;
-  exits: Partial<Record<Direction, PossibleBoard>> = {};
-  extended: boolean = false;
-
-  constructor (
-    public pos: [number, number],
-    public level: number,
-    public type: BoardType,
-    public template: BoardTemplate,
-    public startDir?: Direction,
-    public prev?: PossibleBoard,
-  ) {
-    this.dim = [template.width(), template.height()];
-    if (startDir && prev) this.exits[startDir] = prev;
-  }
-
-  intersects (other: PossibleBoard) {
-    return !(
-      other.pos[0] > this.pos[0] + this.dim[0] ||
-      this.pos[0] > other.pos[0] + other.dim[0] ||
-      other.pos[1] > this.pos[1] + this.dim[1] ||
-      this.pos[1] > other.pos[1] + other.dim[1]
-    );
-  }
-}
 
 export default class TempleGrid {
   rooms: PossibleBoard[];
-  activeBoard: PossibleBoard;
-  unusedKeys: Set<string>;
+  unusedKeys: Set<string> = new Set();
+  tiles: Record<string, Tile> = {};
+  managers: Record<string, RoomManager> = {};
 
-  constructor (private activeOpts: {
-    textures: Record<string, Texture>;
-    scale: number;
-    app: Application;
-    blurFilter: Filter;
-    lightingLayer: Layer;
-  }) {
-    this.unusedKeys = new Set();
+  animations: { countdown: number; fn: (t: number) => void; callback: () => void; }[] = [];
+
+  constructor (private context: RenderContext) {
     const { template, type } = this.generateTemplate(5, BoardType.GoishiHiroi);
-    this.activeBoard = new PossibleBoard(
+    this.rooms = [new PossibleBoard(
       [0, 0],
       5,
       type,
       template,
-    );
-
-    this.rooms = [this.activeBoard];
+    )];
   }
 
   generateFinite (n: number) {
@@ -153,6 +108,8 @@ export default class TempleGrid {
       const room = allKeyLocks[remainingIndices[0]];
       room.template = this.generateEmpty(...room.dim).template;
     }
+
+    this.rooms.forEach((room) => this.reify(room));
   }
 
 
@@ -287,19 +244,54 @@ export default class TempleGrid {
   }
 
   reify (room: PossibleBoard) {
-    if (room.board) return;
+    const roomManager = RoomManager.create({ room, context: this.context });
 
-    room.board = new ActiveBoard({
-      ...room.template,
-      ...this.activeOpts,
-      startDir: room.startDir,
-      allDirs: {
-        [Direction.left]: !!room.exits[Direction.left],
-        [Direction.right]: !!room.exits[Direction.right],
-        [Direction.up]: !!room.exits[Direction.up],
-        [Direction.down]: !!room.exits[Direction.down],
-      }
+    Object.entries(roomManager.tiles).forEach(([key, tile]) => {
+      this.tiles[key] = tile
+      this.managers[key] = roomManager;
     });
   }
-}
 
+  tick (delta: number) {
+    this.animations = this.animations.filter((obj) => {
+      obj.countdown = Math.max(0, obj.countdown - delta);
+      obj.fn(obj.countdown);
+
+      if (obj.countdown <= 0) {
+        obj.callback();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  async animate (countdown: number, tick: (t: number) => void) {
+    return new Promise<void>((resolve) => {
+      this.animations.push({
+        countdown,
+        fn: (t: number) => tick(1 - t / countdown),
+        callback: () => resolve()
+      });
+    });
+  }
+
+  async applyMove (state: PlayerState, dir: Direction): Promise<void> {
+    const next = add(state.pos[0], state.pos[1], dir);
+    const manager = this.managers[
+      `${next[0]}:${next[1]}`
+    ];
+    const { ok, slide } = manager ? manager.step(next, dir) : { ok: false, slide: undefined };
+
+    if (ok) {
+      this.context.player.zIndex = Math.max(state.pos[1], next[1]) + 1;
+      await this.animate(5, (p) => {
+        this.context.player.position.x = ((1 - p) * state.pos[0] + p * next[0]) * this.context.scale;
+        this.context.player.position.y = ((1 - p) * state.pos[1] + p * next[1]) * this.context.scale;
+      });
+      state.pos = next;
+      manager.reveal();
+    }
+    if (slide) return await this.applyMove(state, slide);
+    return;
+  }
+}

@@ -5,9 +5,29 @@ import GoishiHiroiBoard from '../generators/GoishiHiroiBoard';
 import KnightGraph, { KnightColor, Knight } from '../generators/KnightGraph';
 import AltarBoard from '../generators/AltarBoard';
 
+export enum BoardType {
+  GoishiHiroi = 'GoishiHiroi',
+  Hamiltonian = 'Hamiltonian',
+  KnightGraph = 'KnightGraph',
+  Altar = 'Altar',
+  KeyOrLock = 'KeyOrLock',
+  Rest = 'Rest'
+}
+
+export const boardTypes = [
+  BoardType.GoishiHiroi,
+  BoardType.Hamiltonian,
+  BoardType.Altar,
+  BoardType.KeyOrLock,
+  BoardType.Rest,
+
+  // Knight graph omitted because it's bad
+]
+
 export enum Terrain {
   water = 'water',
   litTorch = 'litTorch',
+  sourceTorch = 'sourceTorch',
   unlitTorch = 'unlitTorch',
   path = 'path',
   ice = 'ice',
@@ -15,6 +35,8 @@ export enum Terrain {
   usedIceRune = 'usedIceRune',
   purple = 'purple',
   grass = 'grass',
+  door = 'door',
+  openDoor = 'openDoor',
 }
 
 export type LevelOptions = {
@@ -112,18 +134,23 @@ export default class BoardTemplate {
 
   opts: LevelOptions;
 
+  type: BoardType;
+
   constructor ({
     terrain,
     mobs,
     opts,
+    type,
   }: {
     terrain: Terrain[][];
     mobs: Mob[];
     opts: LevelOptions;
+    type: BoardType;
   }) {
     this.terrain = terrain;
     this.opts = opts;
     this.mobs = mobs;
+    this.type = type;
   }
 
   static fromKnightGraph(knightGraph: KnightGraph) {
@@ -202,6 +229,7 @@ export default class BoardTemplate {
       terrain,
       mobs,
       opts: {},
+      type: BoardType.KnightGraph
     });
   }
 
@@ -256,6 +284,7 @@ export default class BoardTemplate {
       terrain,
       mobs,
       opts: { altarTarget: board.numBuckets * 3 },
+      type: BoardType.Altar
     });
   }
 
@@ -280,6 +309,7 @@ export default class BoardTemplate {
       opts: {
         goishiHiroi: true,
       },
+      type: BoardType.GoishiHiroi
     });
   }
 
@@ -330,13 +360,14 @@ export default class BoardTemplate {
 
     terrain[width + 1][1] = Terrain.path;
 
-    terrain[Math.floor(width / 2) * 2 + 2][height * 2] = Terrain.litTorch;
+    terrain[Math.floor(width / 2) * 2 + 2][height * 2] = Terrain.sourceTorch;
     terrain[width + 1][height * 2 + 1] = Terrain.path;
 
     return new this({
       terrain,
       mobs: [],
       opts: { hRoot: [ Math.floor(width / 2) * 2 + 2, height * 2 ] },
+      type: BoardType.Hamiltonian,
     });
   }
 
@@ -356,6 +387,7 @@ export default class BoardTemplate {
         keyProvided: name,
         autoFinish: true,
       },
+      type: BoardType.KeyOrLock,
     });
   }
 
@@ -374,6 +406,7 @@ export default class BoardTemplate {
       opts: {
         lockRequired: name,
       },
+      type: BoardType.KeyOrLock,
     });
   }
 
@@ -412,6 +445,7 @@ export default class BoardTemplate {
       terrain,
       mobs: [],
       opts: { autoFinish: true },
+      type: BoardType.Rest,
     });
   }
 
@@ -484,6 +518,7 @@ export default class BoardTemplate {
       terrain,
       mobs,
       opts: { autoFinish: true },
+      type: BoardType.Rest,
     });
   }
 
