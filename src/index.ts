@@ -113,6 +113,7 @@ async function main() {
     player,
     rootContainer,
     lightingLayer: lighting,
+    app,
   }));
   temple.generateFinite(35);
 

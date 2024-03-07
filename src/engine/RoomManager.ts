@@ -1,7 +1,7 @@
 import { Application, Sprite, Assets, Texture, Resource, Container, BLEND_MODES, Graphics, BlurFilter, Filter, BitmapText, BitmapFont, RenderTexture, groupD8 } from 'pixi.js';
 import { DropShadowFilter } from '@pixi/filter-drop-shadow';
 import { Layer, Stage } from '@pixi/layers';
-import Direction, { opposites } from '../util/Direction';
+import Direction, { add, opposites } from '../util/Direction';
 import List from '../util/List';
 import HamiltonianBoard from '../generators/HamiltonianBoard';
 import GoishiHiroiBoard from '../generators/GoishiHiroiBoard';
@@ -100,8 +100,11 @@ export default class RoomManager {
     finished: boolean,
   }) {
     const { template, pos, startDir, exits } = room;
-    const { terrain } = template;
+    const { terrain, mobs } = template;
     this.finished = finished;
+
+    const mobMap: Record<string, Mob> = {};
+    mobs.forEach((mob) => mobMap[`${mob.pos[0]}:${mob.pos[1]}`] = mob);
 
     Object.keys(exits).forEach((d) => {
       if (!exits[d as Direction]) return;
@@ -146,6 +149,7 @@ export default class RoomManager {
             j > 0 ? terrain[i][j - 1] : Terrain.water,
             context.textures
           ),
+          mob: mobMap[`${i}:${j}`],
           bulb: terrain[i][j] === Terrain.litTorch || terrain[i][j] === Terrain.sourceTorch || terrain[i][j] === Terrain.unusedIceRune,
           particles: terrain[i][j] === Terrain.litTorch,
           visible: false,
@@ -170,6 +174,9 @@ export default class RoomManager {
     if (room.template.type === BoardType.GoishiHiroi) {
       return new GoishiHiroiRoomManager({ room, context });
     }
+    if (room.template.type === BoardType.Altar) {
+      return new AltarRoomManager({ room, context });
+    }
     return new RoomManager({ room, context, finished: true });
   }
 
@@ -185,7 +192,7 @@ export default class RoomManager {
     });
   }
 
-  step (pos: [number, number], dir: Direction): { ok: boolean; slide?: Direction } {
+  step (pos: [number, number], dir: Direction): { ok: boolean; slide?: Direction; mobTransfer?: { from: Tile, to: Tile } } {
     const tile = this.tiles[`${pos[0]}:${pos[1]}`];
 
     if (tile.terrain === Terrain.water || tile.terrain === Terrain.door) return { ok: false };
@@ -279,6 +286,89 @@ class GoishiHiroiRoomManager extends RoomManager {
         });
         this.lastDir = undefined;
       }
+    }
+
+    return { ok: true };
+  }
+}
+
+class AltarRoomManager extends RoomManager {
+  finished = false;
+
+  constructor ({ room, context }: {
+    room: PossibleBoard,
+    context: RenderContext,
+  }) {
+    super({ room, context, finished: false });
+  }
+
+  passable(tile: Tile) {
+    if (tile.terrain === Terrain.water || tile.terrain === Terrain.door) return false;
+    if (tile.mob && tile.mob.mob instanceof AltarMob) return false;
+
+    return true;
+  }
+
+  step (pos: [number, number], dir: Direction) {
+    const tile = this.tiles[`${pos[0]}:${pos[1]}`];
+
+    if (!this.passable(tile)) return { ok: false };
+
+    if (tile.mob && tile.mob.mob instanceof PileMob) {
+      const dest = add(pos[0], pos[1], dir);
+      const destTile = this.tiles[`${dest[0]}:${dest[1]}`];
+      if (!this.passable(destTile) || destTile.mob) return { ok: false };
+
+      destTile.mob = tile.mob;
+      tile.mob = undefined;
+
+      destTile.mob.pos = destTile.pos;
+      destTile.mob.sprite.zIndex = destTile.mob.pos[1] + 1;
+
+      Object.values(this.tiles).forEach((tile) => {
+        if (tile.mob && tile.mob.mob instanceof AltarMob) {
+          const offerings = [
+            [tile.pos[0] - 1, tile.pos[1] + 1],
+            [tile.pos[0], tile.pos[1] + 1],
+            [tile.pos[0] + 1, tile.pos[1] + 1],
+          ];
+
+          const torches = [
+            [tile.pos[0] + 1, tile.pos[1]],
+            [tile.pos[0] - 1, tile.pos[1]],
+          ];
+
+          const sum = offerings.map((p) => {
+            const adj = this.tiles[`${p[0]}:${p[1]}`];
+            return (adj && adj.mob && adj.mob.mob instanceof PileMob ? adj.mob.mob.size : 0);
+          }).reduce((a, b) => a + b);
+
+          if (sum === this.template.opts.altarTarget) {
+            torches.forEach((p) => {
+              const adj = this.tiles[`${p[0]}:${p[1]}`];
+              adj.terrain = Terrain.litTorch;
+              adj.sprite.texture = this.context.textures.litMid;
+              adj.addBulb();
+            });
+          } else {
+            torches.forEach((p) => {
+              const adj = this.tiles[`${p[0]}:${p[1]}`];
+              adj.terrain = Terrain.unlitTorch;
+              adj.sprite.texture = this.context.textures.lightMid;
+              adj.removeBulb();
+            });
+          }
+        }
+      });
+
+      if (Object.values(this.tiles).every((tile) => tile.terrain !== Terrain.unlitTorch)) {
+        this.declareFinished();
+      }
+
+      return {
+        ok: true,
+        mobTransfer: { from: tile, to: destTile }
+      };
     }
 
     return { ok: true };

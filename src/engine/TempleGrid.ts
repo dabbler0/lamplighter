@@ -280,13 +280,17 @@ export default class TempleGrid {
     const manager = this.managers[
       `${next[0]}:${next[1]}`
     ];
-    const { ok, slide } = manager ? manager.step(next, dir) : { ok: false, slide: undefined };
+    const { ok, slide, mobTransfer } = manager ? manager.step(next, dir) : { ok: false, slide: undefined, mobTransfer: undefined };
 
     if (ok) {
       this.context.player.zIndex = Math.max(state.pos[1], next[1]) + 1;
       await this.animate(5, (p) => {
         this.context.player.position.x = ((1 - p) * state.pos[0] + p * next[0]) * this.context.scale;
         this.context.player.position.y = ((1 - p) * state.pos[1] + p * next[1]) * this.context.scale;
+        if (mobTransfer) {
+          mobTransfer.to.mob.sprite.position.x = ((1 - p) * mobTransfer.from.pos[0] + p * mobTransfer.to.pos[0]) * this.context.scale;
+          mobTransfer.to.mob.sprite.position.y = ((1 - p) * mobTransfer.from.pos[1] + p * mobTransfer.to.pos[1]) * this.context.scale;
+        }
       });
       state.pos = next;
       manager.reveal();

@@ -9,10 +9,11 @@ export default class RenderContext {
   rootContainer: Container;
   scale: number;
   textures: Record<string, Texture>;
+  app: Application;
 
   constructor({
     blur, lightingLayer, stage, rootContainer, scale,
-    textures, player,
+    textures, player, app,
   }: {
     blur: Filter;
     lightingLayer: Layer;
@@ -21,6 +22,7 @@ export default class RenderContext {
     scale: number;
     textures: Record<string, Texture>;
     player: Sprite;
+    app: Application;
   }) {
     this.blur = blur;
     this.lightingLayer = lightingLayer;
@@ -29,6 +31,7 @@ export default class RenderContext {
     this.scale = scale;
     this.textures = textures;
     this.player = player;
+    this.app = app;
 
     rootContainer.sortableChildren = true;
     player.zIndex = 0;
